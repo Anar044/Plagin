@@ -5,9 +5,7 @@ using SocketIOClient;
 using SocketIOClient.Common;
 using SocketIOClient.Serializer.NewtonsoftJson;
 using System;
-using System.Collections.Generic;
 using System.Collections.Specialized;
-using System.Net.Http;
 
 namespace Resto.Front.Api.HorecaControlPlugin.Core.Infrastructure.Communication
 {
@@ -28,12 +26,12 @@ namespace Resto.Front.Api.HorecaControlPlugin.Core.Infrastructure.Communication
                 ? debugSettings.DebugSocketUrl
                 : Constants.DefaultSocketUrl;
 
-            // VPS Socket.IO configuration:
+            // VPS Socket.IO:
             // Namespace: /plugin-websocket
             // Engine.IO path: /plugin-websocket/socket.io
             // Transport: polling only
-            // Authentication is intentionally disabled for the initial connectivity test.
-            // Plugin identity is sent through Query and can be validated on the VPS later.
+            // Authentication: disabled
+            // Plugin identity is sent through Query.
             var socketIoOptions = new SocketIOOptions
             {
                 ConnectionTimeout = Constants.ConnectionTimeout,
@@ -57,7 +55,6 @@ namespace Resto.Front.Api.HorecaControlPlugin.Core.Infrastructure.Communication
             PluginContext.Log.Info(
                 $"SocketIOFactory :: Creating client, url={socketUrl}, path={Constants.SocketIoPath}, namespace=/plugin-websocket, transport=Polling, auth=disabled, timeout={Constants.ConnectionTimeout.TotalSeconds}s, reconnection=false");
 
-            // Те же настройки, что и у ToJson — единый wire-формат с Newtonsoft.
             var socketJsonSettings = new JsonSerializerSettings
             {
                 NullValueHandling = PluginHelpers.jsonSerializerSettings.NullValueHandling,
@@ -70,8 +67,6 @@ namespace Resto.Front.Api.HorecaControlPlugin.Core.Infrastructure.Communication
             return new SocketIOClient.SocketIO(new Uri(socketUrl), socketIoOptions, services =>
             {
                 services.AddNewtonsoftJson(socketJsonSettings);
-                // WinHttpHandler оставляем для net472 polling.
-                services.AddSingleton<HttpClient>(_ => new WinHttpHandler());
             });
         }
     }
