@@ -3,18 +3,25 @@ using System;
 namespace Resto.Front.Api.HorecaControlPlugin.Core.Infrastructure.Configuration
 {
     /// <summary>
-    /// Константы для конфигурации
+    /// Constants for plugin configuration.
     /// </summary>
     public static class Constants
     {
         // Socket.IO VPS
-        // SocketIOClient отправляет Engine.IO запрос по Options.Path.
-        // Для нашего VPS правильный конечный адрес:
-        // http://68.233.120.197/plugin-websocket/socket.io/
-        // Поэтому базовый URL НЕ содержит /plugin-websocket,
-        // а полный путь Socket.IO указываем в SocketIoPath.
-        public const string DefaultSocketUrl = "http://68.233.120.197";
-        public const string SocketIoPath = "/plugin-websocket/socket.io";
+        // SocketIOClient uses the URI path as the Socket.IO namespace,
+        // while Options.Path is the Engine.IO transport endpoint.
+        //
+        // Therefore the correct combination is:
+        //   URI  = http://68.233.120.197/plugin-websocket
+        //   Path = /socket.io
+        //
+        // This produces the Engine.IO endpoint:
+        //   http://68.233.120.197/plugin-websocket/socket.io/
+        //
+        // IMPORTANT: do not put /plugin-websocket into both values,
+        // otherwise the client requests /plugin-websocket/plugin-websocket/socket.io.
+        public const string DefaultSocketUrl = "http://68.233.120.197/plugin-websocket";
+        public const string SocketIoPath = "/socket.io";
         public static readonly TimeSpan ConnectionTimeout = TimeSpan.FromSeconds(10);
 
         // Reconnection
