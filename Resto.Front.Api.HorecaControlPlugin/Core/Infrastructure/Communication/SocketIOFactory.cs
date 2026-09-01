@@ -55,6 +55,11 @@ namespace Resto.Front.Api.HorecaControlPlugin.Core.Infrastructure.Communication
             PluginContext.Log.Info(
                 $"SocketIOFactory :: Creating client, url={socketUrl}, path={Constants.SocketIoPath}, namespace=/plugin-websocket, transport=Polling, auth=disabled, timeout={Constants.ConnectionTimeout.TotalSeconds}s, reconnection=false");
 
+            // Диагностика выполняется непосредственно из процесса iiko.
+            // Она проверяет обычный HTTP GET до того же Engine.IO endpoint,
+            // не создавая Socket.IO клиента и не изменяя его настройки.
+            SocketConnectivityDiagnostics.TestHttpEndpoint(socketUrl);
+
             var socketJsonSettings = new JsonSerializerSettings
             {
                 NullValueHandling = PluginHelpers.jsonSerializerSettings.NullValueHandling,
