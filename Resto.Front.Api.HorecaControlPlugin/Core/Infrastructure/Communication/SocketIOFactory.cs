@@ -6,6 +6,8 @@ using SocketIOClient.Common;
 using SocketIOClient.Serializer.NewtonsoftJson;
 using System;
 using System.Collections.Specialized;
+using System.Net.Http;
+using System.Net.Http.WinHttpHandler;
 
 namespace Resto.Front.Api.HorecaControlPlugin.Core.Infrastructure.Communication
 {
@@ -65,6 +67,15 @@ namespace Resto.Front.Api.HorecaControlPlugin.Core.Infrastructure.Communication
             return new SocketIOClient.SocketIO(new Uri(socketUrl), socketIoOptions, services =>
             {
                 services.AddNewtonsoftJson(socketJsonSettings);
+
+                // SocketIOClient expects HttpClient from DI.
+                // WinHttpHandler is a HttpMessageHandler, so wrap it in HttpClient.
+                // This is required for stable HTTP polling on .NET Framework 4.7.2.
+                services.AddSingleton<HttpClient>(_ =>
+                {
+                    var handler = new WinHttpHandler();
+                    return new HttpClient(handler);
+                });
             });
         }
     }
