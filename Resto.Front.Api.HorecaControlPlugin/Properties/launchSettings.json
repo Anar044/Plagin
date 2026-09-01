@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "Resto.Front.Api.HorecaControlPlugin": {
+      "commandName": "Executable",
+      "executablePath": "$(PluginHostPath)",
+      "commandLineArgs": "/p=$(MSBuildProjectName) /a=\"$(PluginTargetPath)\" /c=$(MSBuildProjectName).HorecaControl /m=21016318 /l=\"$(PluginTargetDir)/log/hc.log\""
+    }
+  }
+}

@@ -1,0 +1,97 @@
+create table [Users]
+(
+  [Id] int IDENTITY (1,1) PRIMARY KEY
+, [UserId] UNIQUEIDENTIFIER not null
+, [UserName] NVARCHAR(100) not null
+);
+GO
+
+create table [Events]
+(
+  [Id] int IDENTITY (1,1) PRIMARY KEY
+, [Uuid] UNIQUEIDENTIFIER not null
+, [DateTime] DATETIME not null
+, [Event] IMAGE
+, [IsSent] Bit not null
+);
+GO
+
+create table [Messages]
+(
+  [Id] int IDENTITY (1,1) PRIMARY KEY
+, [Uuid] UNIQUEIDENTIFIER not null
+, [DateTime] DATETIME not null
+, [Message] IMAGE
+, [IsSent] Bit not null
+);
+GO
+
+create table [Shifts]
+(
+  [Id] int IDENTITY (1,1) PRIMARY KEY
+, [OpenTime] DateTime not null
+, [CloseTime] DateTime
+, [OpenerUserId] int 
+, [CloserUserId] int
+);
+GO
+
+
+create table [Orders]
+(
+  [Id] int IDENTITY (1,1) PRIMARY KEY
+, [Shiftid] int
+, [OrderId] UNIQUEIDENTIFIER not null
+, [DateTime] DateTime
+, [Data] IMAGE
+, [Count] int
+, [Deleted] bit not null
+);
+GO
+
+
+
+
+create table [HighRiskOperations]
+(
+  [Id] int IDENTITY (1,1) PRIMARY KEY
+, [TerminalsGroupId] UNIQUEIDENTIFIER not null
+, [Date] DateTime
+, [UserId] int
+, [ShiftId] int
+, [Action] NVARCHAR(30) not null
+
+);
+GO
+
+
+ALTER TABLE [Shifts] ADD CONSTRAINT [FK_Shifts_Users] FOREIGN KEY ([OpenerUserId])
+   REFERENCES [Users] ([Id]) 
+GO
+
+ALTER TABLE [Shifts] ADD CONSTRAINT [FK_Shifts_Users1] FOREIGN KEY ([OpenerUserId])
+   REFERENCES [Users] ([Id]) 
+GO
+
+ALTER TABLE [Shifts] ADD CONSTRAINT [FK_Shifts_Users2] FOREIGN KEY ([CloserUserId])
+   REFERENCES [Users] ([Id]) 
+GO
+
+
+
+ALTER TABLE [HighRiskOperations] ADD CONSTRAINT [FK_HighRiskOperations_ShiftId] FOREIGN KEY ([ShiftId])
+   REFERENCES [Shifts] ([Id]) ON DELETE CASCADE
+GO
+
+ALTER TABLE [HighRiskOperations] ADD CONSTRAINT [FK_HighRiskOperations_UserId] FOREIGN KEY ([UserId])
+   REFERENCES [Users] ([Id]) 
+GO
+
+
+ALTER TABLE [Orders] ADD CONSTRAINT [FK_Orders_ShiftId] FOREIGN KEY ([ShiftId])
+   REFERENCES [Shifts] ([Id]) 
+GO
+
+
+
+

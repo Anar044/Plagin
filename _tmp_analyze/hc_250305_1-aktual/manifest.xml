@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Manifest xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <FileName>Resto.Front.Api.HorecaControlPlugin.dll</FileName>
+  <TypeName>Resto.Front.Api.HorecaControlPlugin.HorecaControl</TypeName>
+  <ApiVersion>V8Preview5</ApiVersion>
+  <LicenseModuleId>21016318</LicenseModuleId>
+</Manifest>
