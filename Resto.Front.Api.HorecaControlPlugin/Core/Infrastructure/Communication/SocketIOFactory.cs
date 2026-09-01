@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json;
 using Resto.Front.Api.HorecaControlPlugin.Core.Infrastructure.Configuration;
 using SocketIOClient;
@@ -28,16 +28,19 @@ namespace Resto.Front.Api.HorecaControlPlugin.Core.Infrastructure.Communication
                 ? debugSettings.DebugSocketUrl
                 : Constants.DefaultSocketUrl;
 
-            // SocketIO 4.x: путь в URL — namespace (/plugin-websocket), engine.io идёт на /socket.io/.
-            // Polling + WinHttpHandler: на net472 дефолтный HttpClient (HttpWebRequest) падает с
-            // ProtocolViolationException при отправке Auth-тела handshake.
-            // AutoUpgrade=false: сервер отдаёт upgrades:[] — WebSocket upgrade недоступен.
+            // VPS Socket.IO configuration:
+            // Namespace: /plugin-websocket
+            // Engine.IO path: /plugin-websocket/socket.io
+            // Transport: polling only
+            // Authentication is intentionally disabled for the initial connectivity test.
+            // Plugin identity is sent through Query and can be validated on the VPS later.
             var socketIoOptions = new SocketIOOptions
             {
                 ConnectionTimeout = Constants.ConnectionTimeout,
                 Transport = TransportProtocol.Polling,
                 AutoUpgrade = false,
                 Reconnection = false,
+                Path = Constants.SocketIoPath,
                 Query = new NameValueCollection
                 {
                     ["pluginId"] = config.PluginId.ToString(),
@@ -48,16 +51,11 @@ namespace Resto.Front.Api.HorecaControlPlugin.Core.Infrastructure.Communication
                     ["departmentName"] = config.DepartmentName ?? string.Empty,
                     ["version"] = config.Version ?? string.Empty,
                     ["currencyCode"] = config.CurrencyCode ?? string.Empty,
-                },
-                Auth = new Dictionary<string, string>
-                {
-                    { "login", PluginHelpers.IsDeveloperMode ? debugSettings?.DebugUsername : config.Login },
-                    { "password", PluginHelpers.IsDeveloperMode ? debugSettings?.DebugPassword : config.Password },
-                    { "serverUrl", config.ServerUrl }
-                },
+                }
             };
 
-            PluginContext.Log.Info($"SocketIOFactory :: Creating client, url={socketUrl}, transport=Polling, timeout={Constants.ConnectionTimeout.TotalSeconds}s, reconnection=false");
+            PluginContext.Log.Info(
+                $"SocketIOFactory :: Creating client, url={socketUrl}, path={Constants.SocketIoPath}, namespace=/plugin-websocket, transport=Polling, auth=disabled, timeout={Constants.ConnectionTimeout.TotalSeconds}s, reconnection=false");
 
             // Те же настройки, что и у ToJson — единый wire-формат с Newtonsoft.
             var socketJsonSettings = new JsonSerializerSettings
@@ -72,8 +70,8 @@ namespace Resto.Front.Api.HorecaControlPlugin.Core.Infrastructure.Communication
             return new SocketIOClient.SocketIO(new Uri(socketUrl), socketIoOptions, services =>
             {
                 services.AddNewtonsoftJson(socketJsonSettings);
-                // WinHttpHandler вместо HttpWebRequest — иначе polling+Auth падает на net472.
-                services.AddSingleton<HttpClient>(_ => new HttpClient(new WinHttpHandler()));
+                // WinHttpHandler оставляем для net472 polling.
+                services.AddSingleton<HttpClient>(_ => new WinHttpHandler());
             });
         }
     }
