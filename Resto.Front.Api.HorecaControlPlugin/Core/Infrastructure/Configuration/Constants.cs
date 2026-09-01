@@ -7,14 +7,15 @@ namespace Resto.Front.Api.HorecaControlPlugin.Core.Infrastructure.Configuration
     /// </summary>
     public static class Constants
     {
-        // Socket Connection
-        public const string DefaultSocketUrl = "http://68.233.120.197/plugin-websocket";
+        // Socket.IO VPS
+        // Base URL is only the server address. SocketIOFactory supplies the full Engine.IO path.
+        public const string DefaultSocketUrl = "http://68.233.120.197";
         public const string SocketIoPath = "/plugin-websocket/socket.io";
         public static readonly TimeSpan ConnectionTimeout = TimeSpan.FromSeconds(10);
 
-        // Reconnection (SocketIOClient умножает ConnectionTimeout на ReconnectionAttempts — Int32.MaxValue вызывает overflow)
+        // Reconnection
         public const int MaxReconnectionAttempts = 10;
-        public const int ReconnectionDelayMs = 30000; // 30 секунд между пересоединениями
+        public const int ReconnectionDelayMs = 30000;
         public const int BaseReconnectDelaySeconds = 1;
         public const int MaxReconnectDelaySeconds = 30;
         public const int ConnectionTimeoutSeconds = 15;
