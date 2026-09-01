@@ -8,7 +8,8 @@ namespace Resto.Front.Api.HorecaControlPlugin.Core.Infrastructure.Configuration
     public static class Constants
     {
         // Socket Connection
-        public const string DefaultSocketUrl = "http://control.smarthoreca.az/plugin-websocket";
+        public const string DefaultSocketUrl = "http://68.233.120.197/plugin-websocket";
+        public const string SocketIoPath = "/plugin-websocket/socket.io";
         public static readonly TimeSpan ConnectionTimeout = TimeSpan.FromSeconds(10);
 
         // Reconnection (SocketIOClient умножает ConnectionTimeout на ReconnectionAttempts — Int32.MaxValue вызывает overflow)
@@ -35,4 +36,3 @@ namespace Resto.Front.Api.HorecaControlPlugin.Core.Infrastructure.Configuration
         public const int MessageSendTimeoutSeconds = 10;
     }
 }
-
