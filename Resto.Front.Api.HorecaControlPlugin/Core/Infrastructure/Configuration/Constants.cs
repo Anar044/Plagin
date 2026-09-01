@@ -8,9 +8,12 @@ namespace Resto.Front.Api.HorecaControlPlugin.Core.Infrastructure.Configuration
     public static class Constants
     {
         // Socket.IO VPS
-        // The namespace is part of the SocketIO URL; the Engine.IO transport path is configured separately.
+        // SocketIOClient uses the URL path as the namespace and Options.Path as the
+        // Engine.IO transport path. With namespace /plugin-websocket and path
+        // /socket.io the final request is:
+        // http://68.233.120.197/plugin-websocket/socket.io/
         public const string DefaultSocketUrl = "http://68.233.120.197/plugin-websocket";
-        public const string SocketIoPath = "/plugin-websocket/socket.io";
+        public const string SocketIoPath = "/socket.io";
         public static readonly TimeSpan ConnectionTimeout = TimeSpan.FromSeconds(10);
 
         // Reconnection
