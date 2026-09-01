@@ -10,28 +10,26 @@ using System.Collections.Specialized;
 namespace Resto.Front.Api.HorecaControlPlugin.Core.Infrastructure.Communication
 {
     /// <summary>
-    /// Фабрика для создания SocketIO клиента
+    /// Factory for creating the Socket.IO client.
     /// </summary>
     public static class SocketIOFactory
     {
-        /// <summary>
-        /// Создает и настраивает SocketIO клиент
-        /// </summary>
         public static SocketIOClient.SocketIO CreateClient(SocketIoConnectorConfig config, DebugSettings debugSettings)
         {
             if (config == null)
                 throw new ArgumentNullException(nameof(config));
 
-            var socketUrl = PluginHelpers.IsDeveloperMode && debugSettings?.DebugSocketUrl != null
+            // IMPORTANT:
+            // SocketIOClient combines the base URL with Options.Path.
+            // Therefore the base URL must NOT already contain /plugin-websocket.
+            // VPS layout:
+            //   base URL  = http://68.233.120.197
+            //   namespace = /plugin-websocket
+            //   path      = /plugin-websocket/socket.io
+            var socketUrl = PluginHelpers.IsDeveloperMode && !string.IsNullOrWhiteSpace(debugSettings?.DebugSocketUrl)
                 ? debugSettings.DebugSocketUrl
                 : Constants.DefaultSocketUrl;
 
-            // VPS Socket.IO:
-            // Namespace: /plugin-websocket
-            // Engine.IO path: /plugin-websocket/socket.io
-            // Transport: polling only
-            // Authentication: disabled
-            // Plugin identity is sent through Query.
             var socketIoOptions = new SocketIOOptions
             {
                 ConnectionTimeout = Constants.ConnectionTimeout,
@@ -54,11 +52,6 @@ namespace Resto.Front.Api.HorecaControlPlugin.Core.Infrastructure.Communication
 
             PluginContext.Log.Info(
                 $"SocketIOFactory :: Creating client, url={socketUrl}, path={Constants.SocketIoPath}, namespace=/plugin-websocket, transport=Polling, auth=disabled, timeout={Constants.ConnectionTimeout.TotalSeconds}s, reconnection=false");
-
-            // Диагностика выполняется непосредственно из процесса iiko.
-            // Она проверяет обычный HTTP GET до того же Engine.IO endpoint,
-            // не создавая Socket.IO клиента и не изменяя его настройки.
-            SocketConnectivityDiagnostics.TestHttpEndpoint(socketUrl);
 
             var socketJsonSettings = new JsonSerializerSettings
             {
