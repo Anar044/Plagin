@@ -7,7 +7,6 @@ using SocketIOClient.Serializer.NewtonsoftJson;
 using System;
 using System.Collections.Specialized;
 using System.Net.Http;
-using System.Net.Http.WinHttpHandler;
 
 namespace Resto.Front.Api.HorecaControlPlugin.Core.Infrastructure.Communication
 {
@@ -73,7 +72,7 @@ namespace Resto.Front.Api.HorecaControlPlugin.Core.Infrastructure.Communication
                 // This is required for stable HTTP polling on .NET Framework 4.7.2.
                 services.AddSingleton<HttpClient>(_ =>
                 {
-                    var handler = new WinHttpHandler();
+                    var handler = new System.Net.Http.WinHttpHandler();
                     return new HttpClient(handler);
                 });
             });
