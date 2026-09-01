@@ -8,8 +8,8 @@ namespace Resto.Front.Api.HorecaControlPlugin.Core.Infrastructure.Configuration
     public static class Constants
     {
         // Socket.IO VPS
-        // Base URL is only the server address. SocketIOFactory supplies the full Engine.IO path.
-        public const string DefaultSocketUrl = "http://68.233.120.197";
+        // The namespace is part of the SocketIO URL; the Engine.IO transport path is configured separately.
+        public const string DefaultSocketUrl = "http://68.233.120.197/plugin-websocket";
         public const string SocketIoPath = "/plugin-websocket/socket.io";
         public static readonly TimeSpan ConnectionTimeout = TimeSpan.FromSeconds(10);
 
