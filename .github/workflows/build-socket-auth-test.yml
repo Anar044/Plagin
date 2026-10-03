@@ -1,9 +1,10 @@
-name: Build Socket Auth Test Plugin
+name: Build Socket Auth Auto-Enroll Test Plugin
 
 on:
   push:
     branches:
       - feature/socket-auth-v1
+      - feature/socket-auth-auto-enroll-v1
   workflow_dispatch:
 
 jobs:
@@ -36,15 +37,15 @@ jobs:
         shell: pwsh
         run: |
           $src = ".\Resto.Front.Api.HorecaControlPlugin\bin\Release\net472"
-          $stage = ".\artifact\SmartHoreca-Plugin-SocketAuth-Test"
+          $stage = ".\artifact\SmartHoreca-Plugin-AutoEnroll-Test"
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
           Get-ChildItem $src -File | Where-Object { $_.Extension -ne ".pdb" } | Copy-Item -Destination $stage
           Get-ChildItem $src -Directory | ForEach-Object { Copy-Item $_.FullName -Destination $stage -Recurse }
-          Compress-Archive -Path "$stage\*" -DestinationPath ".\SmartHoreca-Plugin-SocketAuth-Test.zip" -Force
+          Compress-Archive -Path "$stage\*" -DestinationPath ".\SmartHoreca-Plugin-AutoEnroll-Test.zip" -Force
 
       - name: Upload test build
         uses: actions/upload-artifact@v4
         with:
-          name: SmartHoreca-Plugin-SocketAuth-Test
-          path: SmartHoreca-Plugin-SocketAuth-Test.zip
+          name: SmartHoreca-Plugin-AutoEnroll-Test
+          path: SmartHoreca-Plugin-AutoEnroll-Test.zip
           if-no-files-found: error
