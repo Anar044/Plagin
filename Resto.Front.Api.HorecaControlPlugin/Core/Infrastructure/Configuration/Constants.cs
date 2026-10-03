@@ -21,6 +21,8 @@ namespace Resto.Front.Api.HorecaControlPlugin.Core.Infrastructure.Configuration
         // IMPORTANT: do not put /plugin-websocket into both values,
         // otherwise the client requests /plugin-websocket/plugin-websocket/socket.io.
         public const string DefaultSocketUrl = "http://68.233.120.197/plugin-websocket";
+        public const string DefaultApiBaseUrl = "http://68.233.120.197";
+        public const string SocketAuthEnrollmentPath = "/api/plugin/auth/enroll";
         public const string SocketIoPath = "/socket.io";
         public static readonly TimeSpan ConnectionTimeout = TimeSpan.FromSeconds(10);
 
