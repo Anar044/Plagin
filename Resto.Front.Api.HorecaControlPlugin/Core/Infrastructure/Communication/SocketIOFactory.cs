@@ -33,7 +33,11 @@ namespace Resto.Front.Api.HorecaControlPlugin.Core.Infrastructure.Communication
                 ? debugSettings.DebugSocketUrl
                 : Constants.DefaultSocketUrl;
 
-            var authEnabled = !string.IsNullOrWhiteSpace(config.SocketAuthSecret);
+            var effectiveSocketAuthSecret = !string.IsNullOrWhiteSpace(config.SocketAuthSecret)
+                ? config.SocketAuthSecret
+                : BundledSocketAuthSecret.Value;
+
+            var authEnabled = !string.IsNullOrWhiteSpace(effectiveSocketAuthSecret);
             var authTs = string.Empty;
             var authNonce = string.Empty;
             var authSig = string.Empty;
@@ -42,7 +46,7 @@ namespace Resto.Front.Api.HorecaControlPlugin.Core.Infrastructure.Communication
                 authTs = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
                 authNonce = Guid.NewGuid().ToString("N");
                 var payload = $"{config.PluginId}|{config.DepartmentId}|{authTs}|{authNonce}";
-                using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(config.SocketAuthSecret));
+                using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(effectiveSocketAuthSecret));
                 authSig = BitConverter.ToString(hmac.ComputeHash(Encoding.UTF8.GetBytes(payload)))
                     .Replace("-", string.Empty)
                     .ToLowerInvariant();
