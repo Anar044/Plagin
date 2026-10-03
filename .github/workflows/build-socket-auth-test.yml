@@ -18,10 +18,16 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
+      - name: Restore from official NuGet
+        shell: pwsh
+        run: |
+          dotnet restore .\Resto.Front.Api.HorecaControlPlugin\Resto.Front.Api.HorecaControlPlugin.csproj -p:APIVersion=V8P5 --source https://api.nuget.org/v3/index.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Build iiko 8.4 test plugin
         shell: pwsh
         run: |
-          dotnet build .\Resto.Front.Api.HorecaControlPlugin\Resto.Front.Api.HorecaControlPlugin.csproj -p:APIVersion=V8P5 --configuration Release
+          dotnet build .\Resto.Front.Api.HorecaControlPlugin\Resto.Front.Api.HorecaControlPlugin.csproj -p:APIVersion=V8P5 --configuration Release --no-restore
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Package
