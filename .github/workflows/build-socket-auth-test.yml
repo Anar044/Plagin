@@ -1,0 +1,42 @@
+name: Build Socket Auth Test Plugin
+
+on:
+  push:
+    branches:
+      - feature/socket-auth-v1
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build iiko 8.4 test plugin
+        shell: pwsh
+        run: |
+          dotnet build .\Resto.Front.Api.HorecaControlPlugin\Resto.Front.Api.HorecaControlPlugin.csproj -p:APIVersion=V8P5 --configuration Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $src = ".\Resto.Front.Api.HorecaControlPlugin\bin\Release\net472"
+          $stage = ".\artifact\SmartHoreca-Plugin-SocketAuth-Test"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Get-ChildItem $src -File | Where-Object { $_.Extension -ne ".pdb" } | Copy-Item -Destination $stage
+          Get-ChildItem $src -Directory | ForEach-Object { Copy-Item $_.FullName -Destination $stage -Recurse }
+          Compress-Archive -Path "$stage\*" -DestinationPath ".\SmartHoreca-Plugin-SocketAuth-Test.zip" -Force
+
+      - name: Upload test build
+        uses: actions/upload-artifact@v4
+        with:
+          name: SmartHoreca-Plugin-SocketAuth-Test
+          path: SmartHoreca-Plugin-SocketAuth-Test.zip
+          if-no-files-found: error
