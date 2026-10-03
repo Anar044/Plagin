@@ -189,6 +189,31 @@ namespace Resto.Front.Api.HorecaControlPlugin
                     PluginContext.Log.Warn($"Dummy connection string = {debugSettings?.DebugSocketUrl}");
                 }
 
+                if (string.IsNullOrWhiteSpace(socketAuthSecret)
+                    && (!PluginHelpers.IsDeveloperMode || string.IsNullOrWhiteSpace(debugSettings?.DebugSocketUrl)))
+                {
+                    PluginContext.Log.Info("Socket auth : no local device key, trying automatic enrollment.");
+
+                    var enrolledSecret = SocketAuthEnrollment.TryEnroll(
+                        pluginFileConfig.PluginId.Value,
+                        departmentId,
+                        group.Id,
+                        Environment.MachineName,
+                        department.Name,
+                        group.Name,
+                        fileVersion);
+
+                    if (!string.IsNullOrWhiteSpace(enrolledSecret))
+                    {
+                        socketAuthSecret = enrolledSecret;
+
+                        if (FileConfig.SaveSocketAuthSecret(enrolledSecret))
+                            PluginContext.Log.Info("Socket auth : device key enrolled and saved automatically.");
+                        else
+                            PluginContext.Log.Warn("Socket auth : device key received but could not be persisted; current session will still use HMAC.");
+                    }
+                }
+
                 var config = new SocketIoConnectorConfig
                 {
                     Login = "c4h4nG1R4nd1G0Rm4d37h1s4ppl1ca710nf0rsm4r7h0r3c4",
