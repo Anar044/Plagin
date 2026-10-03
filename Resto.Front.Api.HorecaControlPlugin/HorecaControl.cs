@@ -164,6 +164,11 @@ namespace Resto.Front.Api.HorecaControlPlugin
 
                 var departmentId = department.DepartmentId;
                 var iikoUrlString = serverUrl.Value;
+                // Prefer the predictable ProgramData config for the test auth secret,
+                // but keep compatibility with the integration config as a fallback.
+                var socketAuthSecret = !string.IsNullOrWhiteSpace(pluginConfigIsolatedStorage?.SocketAuthSecret)
+                    ? pluginConfigIsolatedStorage.SocketAuthSecret
+                    : pluginFileConfig.SocketAuthSecret;
 
                 if (PluginHelpers.IsDeveloperMode)
                 {
@@ -200,7 +205,7 @@ namespace Resto.Front.Api.HorecaControlPlugin
                     DepartmentName = $"{department.Name}",
                     CurrencyCode = currencyCode,
                     Version = fileVersion,
-                    SocketAuthSecret = pluginFileConfig.SocketAuthSecret
+                    SocketAuthSecret = socketAuthSecret
                 };
                 PluginHelpers.GroupName = group;
                 PluginHelpers.DepartmentName = department;
