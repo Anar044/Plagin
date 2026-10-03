@@ -45,6 +45,44 @@ public class FileConfig
     }
 
 
+    public static bool SaveSocketAuthSecret(string socketAuthSecret)
+    {
+        if (string.IsNullOrWhiteSpace(socketAuthSecret))
+            return false;
+
+        try
+        {
+            var file = Path.Combine(PluginHelpers.StorageDirectory, fileName);
+            FileConfig config = null;
+
+            if (File.Exists(file))
+            {
+                config = File.ReadAllText(file).FromJson<FileConfig>();
+            }
+
+            if (config == null)
+            {
+                config = new FileConfig
+                {
+                    PluginId = Guid.NewGuid(),
+                };
+            }
+
+            if (config.PluginId == null)
+                config.PluginId = Guid.NewGuid();
+
+            config.SocketAuthSecret = socketAuthSecret;
+            File.WriteAllText(file, config.ToJson());
+            return true;
+        }
+        catch (Exception ex)
+        {
+            PluginContext.Log.Error($"SaveSocketAuthSecret :: {ex.Message}");
+            return false;
+        }
+    }
+
+
     public static FileConfig GetConfig()
     {
         FileConfig result = null;
