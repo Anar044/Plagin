@@ -7,6 +7,8 @@ using SocketIOClient.Serializer.NewtonsoftJson;
 using System;
 using System.Collections.Specialized;
 using System.Net.Http;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Resto.Front.Api.HorecaControlPlugin.Core.Infrastructure.Communication
 {
@@ -31,6 +33,21 @@ namespace Resto.Front.Api.HorecaControlPlugin.Core.Infrastructure.Communication
                 ? debugSettings.DebugSocketUrl
                 : Constants.DefaultSocketUrl;
 
+            var authEnabled = !string.IsNullOrWhiteSpace(config.SocketAuthSecret);
+            var authTs = string.Empty;
+            var authNonce = string.Empty;
+            var authSig = string.Empty;
+            if (authEnabled)
+            {
+                authTs = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
+                authNonce = Guid.NewGuid().ToString("N");
+                var payload = $"{config.PluginId}|{config.DepartmentId}|{authTs}|{authNonce}";
+                using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(config.SocketAuthSecret));
+                authSig = BitConverter.ToString(hmac.ComputeHash(Encoding.UTF8.GetBytes(payload)))
+                    .Replace("-", string.Empty)
+                    .ToLowerInvariant();
+            }
+
             var socketIoOptions = new SocketIOOptions
             {
                 ConnectionTimeout = Constants.ConnectionTimeout,
@@ -48,11 +65,15 @@ namespace Resto.Front.Api.HorecaControlPlugin.Core.Infrastructure.Communication
                     ["departmentName"] = config.DepartmentName ?? string.Empty,
                     ["version"] = config.Version ?? string.Empty,
                     ["currencyCode"] = config.CurrencyCode ?? string.Empty,
+                    ["authMode"] = authEnabled ? "hmac-sha256-v1" : "legacy",
+                    ["authTs"] = authTs,
+                    ["authNonce"] = authNonce,
+                    ["authSig"] = authSig,
                 }
             };
 
             PluginContext.Log.Info(
-                $"SocketIOFactory :: Creating client, url={socketUrl}, path={Constants.SocketIoPath}, namespace=/plugin-websocket, transport=Polling, auth=disabled, timeout={Constants.ConnectionTimeout.TotalSeconds}s, reconnection=false");
+                $"SocketIOFactory :: Creating client, url={socketUrl}, path={Constants.SocketIoPath}, namespace=/plugin-websocket, transport=Polling, auth={(authEnabled ? "hmac-sha256-v1" : "legacy")}, timeout={Constants.ConnectionTimeout.TotalSeconds}s, reconnection=false");
 
             var socketJsonSettings = new JsonSerializerSettings
             {
