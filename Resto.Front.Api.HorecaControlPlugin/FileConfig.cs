@@ -9,6 +9,11 @@ public class FileConfig
     [JsonProperty("PluginId")]
     public Guid? PluginId { get; set; }
 
+    // Optional shared secret used only to sign the Socket.IO handshake.
+    // The secret itself is never sent to the server.
+    [JsonProperty("SocketAuthSecret")]
+    public string SocketAuthSecret { get; set; }
+
 
     private static string fileName = "smarthoreca.json";
 
