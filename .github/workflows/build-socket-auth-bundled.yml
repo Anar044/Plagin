@@ -1,0 +1,76 @@
+name: Build Bundled Socket Auth Plugin
+
+on:
+  push:
+    branches:
+      - feature/socket-auth-bundled-v1
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      PLUGIN_SOCKET_AUTH_SECRET_BUNDLE: ${{ secrets.PLUGIN_SOCKET_AUTH_SECRET_BUNDLE }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate bundled auth secret
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:PLUGIN_SOCKET_AUTH_SECRET_BUNDLE)) {
+            Write-Error "Repository secret PLUGIN_SOCKET_AUTH_SECRET_BUNDLE is not configured."
+            exit 1
+          }
+
+      - name: Inject bundled auth secret for this build only
+        shell: pwsh
+        run: |
+          $path = ".\Resto.Front.Api.HorecaControlPlugin\Core\Infrastructure\Configuration\BundledSocketAuthSecret.cs"
+          $secretBytes = [System.Text.Encoding]::UTF8.GetBytes($env:PLUGIN_SOCKET_AUTH_SECRET_BUNDLE)
+          $secretBase64 = [Convert]::ToBase64String($secretBytes)
+          $text = Get-Content $path -Raw
+          if (-not $text.Contains("__BUNDLED_SECRET_BASE64__")) {
+            Write-Error "Bundled secret placeholder not found."
+            exit 1
+          }
+          $text = $text.Replace("__BUNDLED_SECRET_BASE64__", $secretBase64)
+          [System.IO.File]::WriteAllText($path, $text, [System.Text.UTF8Encoding]::new($false))
+          Write-Host "Bundled auth secret injected for build."
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore from official NuGet
+        shell: pwsh
+        run: |
+          dotnet restore .\Resto.Front.Api.HorecaControlPlugin\Resto.Front.Api.HorecaControlPlugin.csproj -p:APIVersion=V8P5 --source https://api.nuget.org/v3/index.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build iiko 8.4 bundled auth plugin
+        shell: pwsh
+        run: |
+          dotnet build .\Resto.Front.Api.HorecaControlPlugin\Resto.Front.Api.HorecaControlPlugin.csproj -p:APIVersion=V8P5 --configuration Release --no-restore
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $src = ".\Resto.Front.Api.HorecaControlPlugin\bin\Release\net472"
+          $stage = ".\artifact\SmartHoreca-Plugin-BundledAuth"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Get-ChildItem $src -File | Where-Object { $_.Extension -ne ".pdb" } | Copy-Item -Destination $stage
+          Get-ChildItem $src -Directory | ForEach-Object { Copy-Item $_.FullName -Destination $stage -Recurse }
+          Compress-Archive -Path "$stage\*" -DestinationPath ".\SmartHoreca-Plugin-BundledAuth.zip" -Force
+
+      - name: Upload bundled auth build
+        uses: actions/upload-artifact@v4
+        with:
+          name: SmartHoreca-Plugin-BundledAuth
+          path: SmartHoreca-Plugin-BundledAuth.zip
+          if-no-files-found: error
