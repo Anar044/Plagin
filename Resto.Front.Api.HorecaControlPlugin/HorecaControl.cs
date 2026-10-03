@@ -164,6 +164,11 @@ namespace Resto.Front.Api.HorecaControlPlugin
 
                 var departmentId = department.DepartmentId;
                 var iikoUrlString = serverUrl.Value;
+                // Prefer the predictable ProgramData config for the test auth secret,
+                // but keep compatibility with the integration config as a fallback.
+                var socketAuthSecret = !string.IsNullOrWhiteSpace(pluginConfigIsolatedStorage?.SocketAuthSecret)
+                    ? pluginConfigIsolatedStorage.SocketAuthSecret
+                    : pluginFileConfig.SocketAuthSecret;
 
                 if (PluginHelpers.IsDeveloperMode)
                 {
@@ -199,7 +204,8 @@ namespace Resto.Front.Api.HorecaControlPlugin
                     GroupName = $"{group.Name}",
                     DepartmentName = $"{department.Name}",
                     CurrencyCode = currencyCode,
-                    Version = fileVersion
+                    Version = fileVersion,
+                    SocketAuthSecret = socketAuthSecret
                 };
                 PluginHelpers.GroupName = group;
                 PluginHelpers.DepartmentName = department;
@@ -216,6 +222,7 @@ namespace Resto.Front.Api.HorecaControlPlugin
                 PluginContext.Log.Info($"ID терминальной группы :       {PluginHelpers.GroupName.Id}");
                 PluginContext.Log.Info($"Название терминальной группы : '{PluginHelpers.GroupName.Name}'");
                 PluginContext.Log.Info($"Код валюты :                   '{currencyCode}'");
+                PluginContext.Log.Info($"Socket auth :                  {(string.IsNullOrWhiteSpace(config.SocketAuthSecret) ? "legacy" : "HMAC enabled")}");
 
 
                 CultureInfo ci = new CultureInfo("ru-RU");
