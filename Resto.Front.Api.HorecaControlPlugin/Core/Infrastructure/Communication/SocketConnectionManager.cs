@@ -153,6 +153,9 @@ namespace Resto.Front.Api.HorecaControlPlugin.Core.Infrastructure.Communication
 
                         // Синхронное ожидание подключения с таймаутом
                         PluginContext.Log.Debug($"Connect :: Starting ConnectAsync with timeout {Constants.ConnectionTimeoutSeconds}s");
+                        // Refresh HMAC timestamp/nonce on EVERY attempt to prevent
+                        // expired or replayed signatures after long reconnects.
+                        SocketIOFactory.RefreshAuthentication(_client);
                         var connectTask = _client.ConnectAsync();
                         var timeoutTask = Task.Delay(TimeSpan.FromSeconds(Constants.ConnectionTimeoutSeconds));
                         var completedTask = Task.WaitAny(connectTask, timeoutTask);
