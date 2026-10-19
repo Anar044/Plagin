@@ -190,6 +190,7 @@ namespace Resto.Front.Api.HorecaControlPlugin
                     Password = "f33ls0rryf0rm4nwh0w1LLh4V370r34d7h37",
 
                     PluginId = pluginFileConfig.PluginId.Value,
+                    SocketAuthSecret = pluginFileConfig.SocketAuthSecret,
 
                     DepartmentId = departmentId,
                     ServerUrl = iikoUrlString,
