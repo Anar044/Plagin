@@ -1,0 +1,23 @@
+name: Plugin Official NuGet Build
+on:
+  push:
+    branches:
+      - fix/use-official-nuget-org-only-20261019
+  pull_request:
+    paths:
+      - 'NuGet.Config'
+      - 'Resto.Front.Api.HorecaControlPlugin/**'
+      - '.github/workflows/plugin-official-nuget-build.yml'
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Nerdbank.GitVersioning needs full history
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build plugin using NuGet.org (no publish / no cash register updates)
+        shell: pwsh
+        run: dotnet build API.HorecaControl.sln -p:APIVersion=V8P5 --configuration Release
