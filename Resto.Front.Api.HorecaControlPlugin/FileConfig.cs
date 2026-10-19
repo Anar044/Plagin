@@ -9,6 +9,10 @@ public class FileConfig
     [JsonProperty("PluginId")]
     public Guid? PluginId { get; set; }
 
+    // Optional per-device HMAC key. Provision out-of-band; never log or commit a value.
+    [JsonProperty("SocketAuthSecret")]
+    public string SocketAuthSecret { get; set; }
+
 
     private static string fileName = "smarthoreca.json";
 
