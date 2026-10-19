@@ -15,4 +15,5 @@ public class SocketIoConnectorConfig
     public string CurrencyCode { get; set; }
     public string ServerUrl { get; set; }
     public string Version { get; set; }
+    public string SocketAuthSecret { get; set; }
 }
