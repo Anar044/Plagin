@@ -410,6 +410,134 @@ namespace Resto.Front.Api.HorecaControlPlugin
             }
         }
 
+
+        private async Task FlushCreatedAcknowledgementsAsync(CancellationToken ct)
+        {
+            if (!Directory.Exists(journalDirectory)) return;
+            foreach (var file in Directory.EnumerateFiles(journalDirectory, "*.json"))
+            {
+                ct.ThrowIfCancellationRequested();
+                JObject entry;
+                lock (journalSync)
+                    entry = JObject.Parse(File.ReadAllText(file, Encoding.UTF8));
+                if (entry.Value<bool?>("createdAcked") == true ||
+                    !Guid.TryParse(entry.Value<string>("posOrderId"), out var posOrderId))
+                    continue;
+                var status = entry.Value<string>("status");
+                if (status != "CREATED" && status != "RECOVERED" &&
+                    status != "FISCAL_PENDING" && status != "FISCAL_ACKED")
+                    continue;
+                var live = PluginContext.Operations.GetOrderById(posOrderId);
+                if (live == null)
+                {
+                    PluginContext.Log.Warn("QrPosBridge :: local POS order is missing; manual reconciliation needed.");
+                    continue;
+                }
+                await SendAsync(Command("ackCreated", new {
+                    externalOrderId = entry.Value<string>("externalOrderId"),
+                    posOrderId = posOrderId.ToString("D"),
+                    posOrderNumber = live.Number.ToString(CultureInfo.InvariantCulture)
+                }), ct).ConfigureAwait(false);
+                lock (journalSync)
+                {
+                    var latest = JObject.Parse(File.ReadAllText(file, Encoding.UTF8));
+                    latest["createdAcked"] = true;
+                    PersistJournal(file, latest.ToString(Formatting.None));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Print only after POS creation is acknowledged. A crash or timeout after
+        /// marking IN_PROGRESS is uncertain: never print a second time automatically.
+        /// The operator must inspect actual kitchen printers and resolve the order.
+        /// </summary>
+        private void TryPrintKitchen(string file, JObject entry)
+        {
+            var current = entry.Value<string>("kitchenStatus") ?? "NOT_ATTEMPTED";
+            if (current == "PRINTED" || current == "CHECK_REQUIRED") return;
+            if (current == "IN_PROGRESS")
+            {
+                SetKitchenState(file, "CHECK_REQUIRED");
+                PluginContext.Log.Warn("QrPosBridge :: kitchen print outcome unknown; manual check required.");
+                return;
+            }
+            if (current != "NOT_ATTEMPTED" || entry.Value<bool?>("createdAcked") != true)
+                return;
+            if (!Guid.TryParse(entry.Value<string>("posOrderId"), out var orderId))
+            {
+                SetKitchenState(file, "CHECK_REQUIRED");
+                return;
+            }
+            SetKitchenState(file, "IN_PROGRESS");
+            try
+            {
+                var operations = PluginContext.Operations;
+                var live = operations.GetOrderById(orderId);
+                if (live == null) throw new InvalidOperationException("POS order not found for kitchen print.");
+                var items = live.Items.OfType<IOrderCookingItem>().ToList();
+                if (items.Count == 0)
+                    throw new InvalidOperationException("POS order has no printable cooking items.");
+                // This API performs real kitchen service printing; never repeat it
+                // after ambiguous failures unless the cashier manually verifies.
+                operations.PrintOrderItems(operations.AuthenticateByPin(settings.OperatorPin), live, items);
+                SetKitchenState(file, "PRINTED");
+            }
+            catch (Exception ex)
+            {
+                SetKitchenState(file, "CHECK_REQUIRED");
+                PluginContext.Log.Warn("QrPosBridge :: kitchen print not confirmed: " +
+                    ex.GetType().Name);
+            }
+        }
+
+        private void SetKitchenState(string file, string kitchenStatus)
+        {
+            lock (journalSync)
+            {
+                var latest = JObject.Parse(File.ReadAllText(file, Encoding.UTF8));
+                latest["kitchenStatus"] = kitchenStatus;
+                latest["kitchenAcked"] = false;
+                PersistJournal(file, latest.ToString(Formatting.None));
+            }
+        }
+
+        private async Task FlushKitchenAcknowledgementsAsync(CancellationToken ct)
+        {
+            if (!settings.AllowKitchenPrint || !Directory.Exists(journalDirectory)) return;
+            foreach (var file in Directory.EnumerateFiles(journalDirectory, "*.json"))
+            {
+                ct.ThrowIfCancellationRequested();
+                JObject entry;
+                lock (journalSync)
+                    entry = JObject.Parse(File.ReadAllText(file, Encoding.UTF8));
+                if (entry.Value<bool?>("createdAcked") != true) continue;
+                var kitchenStatus = entry.Value<string>("kitchenStatus") ?? "NOT_ATTEMPTED";
+                if (kitchenStatus == "NOT_ATTEMPTED" || kitchenStatus == "IN_PROGRESS")
+                {
+                    TryPrintKitchen(file, entry);
+                    lock (journalSync)
+                        entry = JObject.Parse(File.ReadAllText(file, Encoding.UTF8));
+                    kitchenStatus = entry.Value<string>("kitchenStatus") ?? "NOT_ATTEMPTED";
+                }
+                if (entry.Value<bool?>("kitchenAcked") == true ||
+                    (kitchenStatus != "PRINTED" && kitchenStatus != "CHECK_REQUIRED"))
+                    continue;
+                await SendAsync(Command("ackKitchen", new {
+                    externalOrderId = entry.Value<string>("externalOrderId"),
+                    posOrderId = entry.Value<string>("posOrderId"),
+                    kitchenStatus
+                }), ct).ConfigureAwait(false);
+                lock (journalSync)
+                {
+                    var latest = JObject.Parse(File.ReadAllText(file, Encoding.UTF8));
+                    if (latest.Value<string>("kitchenStatus") != kitchenStatus) continue;
+                    latest["kitchenAcked"] = true;
+                    PersistJournal(file, latest.ToString(Formatting.None));
+                }
+            }
+        }
+
         private async Task FlushFiscalAcknowledgementsAsync(CancellationToken ct)
         {
             if (!Directory.Exists(journalDirectory)) return;
