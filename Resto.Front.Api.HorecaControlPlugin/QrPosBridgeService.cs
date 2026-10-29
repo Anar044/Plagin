@@ -142,6 +142,7 @@ namespace Resto.Front.Api.HorecaControlPlugin
         {
             var lastHello = DateTime.MinValue;
             var ready = false;
+            var handshakeLogged = false;
             while (!ct.IsCancellationRequested)
             {
                 try
@@ -155,7 +156,17 @@ namespace Resto.Front.Api.HorecaControlPlugin
                             canPrintKitchen = settings.AllowOrderCreation && settings.AllowKitchenPrint
                         }), ct).ConfigureAwait(false);
                         ready = hello.Value<bool?>("accepted") == true;
-                        if (ready) lastHello = DateTime.UtcNow;
+                        if (ready)
+                        {
+                            lastHello = DateTime.UtcNow;
+                            if (!handshakeLogged)
+                            {
+                                PluginContext.Log.Info(settings.AllowOrderCreation
+                                    ? "QrPosBridge :: HTTPS handshake accepted; test order processing is enabled."
+                                    : "QrPosBridge :: HTTPS diagnostic handshake accepted; no POS writes or kitchen printing.");
+                                handshakeLogged = true;
+                            }
+                        }
                     }
                     if (ready && settings.AllowOrderCreation)
                     {
@@ -173,7 +184,10 @@ namespace Resto.Front.Api.HorecaControlPlugin
                 {
                     ready = false;
                     // No secret, guest personal data, or HTTP payload logging.
-                    PluginContext.Log.Warn("QrPosBridge :: polling paused: " + e.GetType().Name);
+                    var safeError = e is InvalidOperationException &&
+                        e.Message.StartsWith("QR Bridge HTTP ", StringComparison.Ordinal)
+                        ? e.Message : e.GetType().Name;
+                    PluginContext.Log.Warn("QrPosBridge :: connection paused: " + safeError);
                 }
                 try
                 {
