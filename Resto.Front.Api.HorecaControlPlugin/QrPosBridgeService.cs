@@ -30,6 +30,7 @@ namespace Resto.Front.Api.HorecaControlPlugin
         private readonly SocketIoConnectorConfig identity;
         private readonly HttpClient http;
         private readonly CancellationTokenSource stop = new CancellationTokenSource();
+        private readonly object journalSync = new object();
         private readonly string journalDirectory;
         private Task runningTask;
         private bool disposed;
@@ -146,6 +147,7 @@ namespace Resto.Front.Api.HorecaControlPlugin
                     }
                     if (ready)
                     {
+                        await FlushFiscalAcknowledgementsAsync(ct).ConfigureAwait(false);
                         var next = await SendAsync(Command("pull"), ct).ConfigureAwait(false);
                         var job = next["job"];
                         if (job is JObject order)
@@ -193,13 +195,13 @@ namespace Resto.Front.Api.HorecaControlPlugin
                         return;
                     }
                     var planned = Validate(job);
-                    StoreJournal(externalId, "PREPARED", null);
+                    StoreJournal(externalId, "PREPARED", null, job.Value<long>("totalMinor"));
                     posOrder = CreatePosOrder(externalId, planned);
-                    StoreJournal(externalId, "CREATED", posOrder);
+                    StoreJournal(externalId, "CREATED", posOrder, job.Value<long>("totalMinor"));
                 }
                 else if (!File.Exists(JournalPath(externalId)))
                 {
-                    StoreJournal(externalId, "RECOVERED", posOrder);
+                    StoreJournal(externalId, "RECOVERED", posOrder, job.Value<long>("totalMinor"));
                 }
             }
             catch (Exception e)
@@ -316,7 +318,7 @@ namespace Resto.Front.Api.HorecaControlPlugin
             return Path.Combine(journalDirectory, externalId + ".json");
         }
 
-        private void StoreJournal(string externalId, string status, IOrder order)
+        private void StoreJournal(string externalId, string status, IOrder order, long expectedMinor)
         {
             var file = JournalPath(externalId);
             var temp = file + "." + Guid.NewGuid().ToString("N") + ".tmp";
@@ -324,14 +326,108 @@ namespace Resto.Front.Api.HorecaControlPlugin
                 externalOrderId = externalId,
                 status,
                 posOrderId = order?.Id.ToString("D"),
+                expectedMinor,
                 createdAtUtc = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture)
             });
-            File.WriteAllText(temp, content, Encoding.UTF8);
-            try
+            lock (journalSync)
             {
-                if (File.Exists(file)) File.Replace(temp, file, null);
-                else File.Move(temp, file);
+                File.WriteAllText(temp, content, Encoding.UTF8);
+                try
+                {
+                    if (File.Exists(file)) File.Replace(temp, file, null);
+                    else File.Move(temp, file);
+                }
+                finally { if (File.Exists(temp)) File.Delete(temp); }
             }
+        }
+
+
+        /// <summary>
+        /// Called only after a successful physical POS fiscal device operation.
+        /// Persist a fiscal acknowledgement before returning from the cheque callback;
+        /// network retries are performed by the QR worker, never by the fiscal thread.
+        /// A regular order CloseTime alone is NOT proof of fiscalization.
+        /// </summary>
+        public void CaptureFiscalReceipt(Guid posOrderId, string receiptNumber,
+            string fiscalReference, string paymentKind, long paidMinor)
+        {
+            if (disposed || !settings.Enabled || !settings.AllowOrderCreation ||
+                posOrderId == Guid.Empty || string.IsNullOrWhiteSpace(receiptNumber) ||
+                string.IsNullOrWhiteSpace(fiscalReference) ||
+                (paymentKind != "POS_CASH" && paymentKind != "POS_CARD"))
+                return;
+            lock (journalSync)
+            {
+                if (!Directory.Exists(journalDirectory)) return;
+                foreach (var file in Directory.EnumerateFiles(journalDirectory, "*.json"))
+                {
+                    try
+                    {
+                        var entry = JObject.Parse(File.ReadAllText(file, Encoding.UTF8));
+                        if (!string.Equals(entry.Value<string>("posOrderId"),
+                            posOrderId.ToString("D"), StringComparison.OrdinalIgnoreCase))
+                            continue;
+                        if (entry.Value<long?>("expectedMinor") != paidMinor)
+                        {
+                            PluginContext.Log.Warn("QrPosBridge :: fiscal amount differs from QR order; reconciliation required.");
+                            return;
+                        }
+                        if (entry.Value<string>("status") == "FISCAL_ACKED") return;
+                        if (entry.Value<string>("status") == "FISCAL_PENDING") return;
+                        if (entry.Value<string>("status") != "CREATED" &&
+                            entry.Value<string>("status") != "RECOVERED")
+                            return;
+                        entry["status"] = "FISCAL_PENDING";
+                        entry["receiptNumber"] = receiptNumber;
+                        entry["fiscalReference"] = fiscalReference;
+                        entry["paymentKind"] = paymentKind;
+                        PersistJournal(file, entry.ToString(Formatting.None));
+                        return;
+                    }
+                    catch (Exception ex)
+                    {
+                        PluginContext.Log.Warn("QrPosBridge :: fiscal journal unavailable: " +
+                            ex.GetType().Name);
+                    }
+                }
+            }
+        }
+
+        private async Task FlushFiscalAcknowledgementsAsync(CancellationToken ct)
+        {
+            if (!Directory.Exists(journalDirectory)) return;
+            foreach (var file in Directory.EnumerateFiles(journalDirectory, "*.json"))
+            {
+                ct.ThrowIfCancellationRequested();
+                JObject entry;
+                lock (journalSync)
+                {
+                    entry = JObject.Parse(File.ReadAllText(file, Encoding.UTF8));
+                }
+                if (entry.Value<string>("status") != "FISCAL_PENDING") continue;
+                await SendAsync(Command("ackFiscalized", new {
+                    externalOrderId = entry.Value<string>("externalOrderId"),
+                    posOrderId = entry.Value<string>("posOrderId"),
+                    receiptNumber = entry.Value<string>("receiptNumber"),
+                    fiscalReference = entry.Value<string>("fiscalReference"),
+                    paymentKind = entry.Value<string>("paymentKind")
+                }), ct).ConfigureAwait(false);
+                lock (journalSync)
+                {
+                    // Do not overwrite a newer event/receipt written by another thread.
+                    var latest = JObject.Parse(File.ReadAllText(file, Encoding.UTF8));
+                    if (latest.Value<string>("status") != "FISCAL_PENDING") continue;
+                    latest["status"] = "FISCAL_ACKED";
+                    PersistJournal(file, latest.ToString(Formatting.None));
+                }
+            }
+        }
+
+        private static void PersistJournal(string file, string content)
+        {
+            var temp = file + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            File.WriteAllText(temp, content, Encoding.UTF8);
+            try { File.Replace(temp, file, null); }
             finally { if (File.Exists(temp)) File.Delete(temp); }
         }
 
