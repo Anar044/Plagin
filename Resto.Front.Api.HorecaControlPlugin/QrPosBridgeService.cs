@@ -2,6 +2,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Resto.Front.Api.Data.Assortment;
 using Resto.Front.Api.Data.Orders;
+using Resto.Front.Api.Data.Organization.Sections;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -243,7 +244,7 @@ namespace Resto.Front.Api.HorecaControlPlugin
             if (!operations.GetCafeSessions().Any())
                 throw new InvalidOperationException("POS cash session is not open.");
             var posTable = job.Value<string>("posTableId");
-            Resto.Front.Api.Data.Orders.ITable table = null;
+            ITable table = null;
             if (mode == "TABLE")
             {
                 if (!Guid.TryParse(posTable, out var tableId) || tableId == Guid.Empty)
@@ -351,7 +352,7 @@ namespace Resto.Front.Api.HorecaControlPlugin
         }
         private sealed class QrCreationPlan
         {
-            public Resto.Front.Api.Data.Orders.ITable Table { get; set; }
+            public ITable Table { get; set; }
             public List<QrCreationItem> Items { get; set; }
             public string Mode { get; set; }
         }
