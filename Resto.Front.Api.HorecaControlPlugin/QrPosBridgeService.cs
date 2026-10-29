@@ -291,7 +291,11 @@ namespace Resto.Front.Api.HorecaControlPlugin
             if (totalMinor != (job.Value<long?>("totalMinor") ?? -1) ||
                 totalMinor <= 0 || totalMinor > 50000000)
                 throw new InvalidOperationException("QR order total does not match item prices.");
-            return new QrCreationPlan { Table = table, Items = planned, Mode = mode };
+            var guestNote = job.Value<string>("guestNote") ?? "";
+            if (guestNote.Length > 280 || guestNote.Any(char.IsControl))
+                throw new InvalidOperationException("QR comment contains invalid characters.");
+            return new QrCreationPlan { Table = table, Items = planned, Mode = mode,
+                GuestNote = guestNote };
         }
 
         private static IOrder CreatePosOrder(string externalId, QrCreationPlan plan)
@@ -303,6 +307,8 @@ namespace Resto.Front.Api.HorecaControlPlugin
             var newOrder = edit.CreateOrder(tables);
             edit.ChangeOrderOriginName(OriginName, newOrder);
             edit.AddOrderExternalData(ExternalOrderKey, externalId, false, newOrder);
+            if (!string.IsNullOrWhiteSpace(plan.GuestNote))
+                edit.ChangeOrderComment(plan.GuestNote, newOrder);
             var guest = edit.AddOrderGuest(null, newOrder);
             foreach (var item in plan.Items)
                 edit.AddOrderProductItem(item.Quantity, item.Product, newOrder, guest, null);
@@ -457,6 +463,7 @@ namespace Resto.Front.Api.HorecaControlPlugin
             public ITable Table { get; set; }
             public List<QrCreationItem> Items { get; set; }
             public string Mode { get; set; }
+            public string GuestNote { get; set; }
         }
     }
 }
