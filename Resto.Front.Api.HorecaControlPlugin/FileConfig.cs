@@ -8,6 +8,9 @@ public class FileConfig
 {
     [JsonProperty("PluginId")]
     public Guid? PluginId { get; set; }
+    [JsonProperty("QrPosBridge")]
+    public QrPosBridgeSettings QrPosBridge { get; set; }
+
 
 
     private static string fileName = "smarthoreca.json";
