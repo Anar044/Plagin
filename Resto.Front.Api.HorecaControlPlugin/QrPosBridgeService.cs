@@ -66,7 +66,8 @@ namespace Resto.Front.Api.HorecaControlPlugin
         {
             reason = "";
             if (string.IsNullOrWhiteSpace(settings.PluginIngressToken) ||
-                string.IsNullOrWhiteSpace(settings.BridgeToken))
+                string.IsNullOrWhiteSpace(settings.BridgeToken) ||
+                string.IsNullOrWhiteSpace(settings.OperatorPin))
             {
                 reason = "one or both bridge credentials are missing";
                 return false;
@@ -298,7 +299,7 @@ namespace Resto.Front.Api.HorecaControlPlugin
                 GuestNote = guestNote };
         }
 
-        private static IOrder CreatePosOrder(string externalId, QrCreationPlan plan)
+        private IOrder CreatePosOrder(string externalId, QrCreationPlan plan)
         {
             var operations = PluginContext.Operations;
             var edit = operations.CreateEditSession();
@@ -312,7 +313,7 @@ namespace Resto.Front.Api.HorecaControlPlugin
             var guest = edit.AddOrderGuest(null, newOrder);
             foreach (var item in plan.Items)
                 edit.AddOrderProductItem(item.Quantity, item.Product, newOrder, guest, null);
-            var created = operations.SubmitChanges(operations.GetCredentials(), edit);
+            var created = operations.SubmitChanges(operations.AuthenticateByPin(settings.OperatorPin), edit);
             return created.Get(newOrder);
         }
 
