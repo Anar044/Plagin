@@ -7,6 +7,8 @@ using Resto.Front.Api.Devices;
 using Resto.Front.Api.HorecaControlPlugin.Dto.Events;
 using Resto.Front.Api.UI;
 using System;
+using System.Globalization;
+using System.Linq;
 using Resto.Front.Api.HorecaControlPlugin.Core.Application.Services.Interfaces;
 
 namespace Resto.Front.Api.HorecaControlPlugin;
@@ -14,11 +16,14 @@ namespace Resto.Front.Api.HorecaControlPlugin;
 public class HorecaControlChequeTaskProcessor : IChequeTaskProcessor
 {
     private readonly IEventPublisher _eventPublisher;
+    private readonly Func<QrPosBridgeService> _qrBridge;
     private decimal _cashRest = 0;
 
-    public HorecaControlChequeTaskProcessor(IServiceProvider serviceProvider)
+    public HorecaControlChequeTaskProcessor(IServiceProvider serviceProvider,
+        Func<QrPosBridgeService> qrBridge = null)
     {
         _eventPublisher = serviceProvider.GetRequiredService<IEventPublisher>();
+        _qrBridge = qrBridge;
     }
 
     public void BeforePayIn(ICashRegisterInfo device, decimal sumToPayIn, bool isCloseSession, IUser cashier,
@@ -54,6 +59,30 @@ public class HorecaControlChequeTaskProcessor : IChequeTaskProcessor
     {
         try
         {
+            // Only real successful fiscal device results contain defensible receipt proof.
+            // The hook does not issue payments and never attempts to close an order.
+            var qrBridge = _qrBridge?.Invoke();
+            if (qrBridge != null && chequeTask != null && !chequeTask.IsRefund &&
+                result is CashRegisterResult registerResult && registerResult.Success)
+            {
+                var docNo = Convert.ToString(registerResult.DocumentNumber, CultureInfo.InvariantCulture);
+                var docSign = Convert.ToString(registerResult.DocumentSign, CultureInfo.InvariantCulture);
+                var hasCash = chequeTask.CashPayment > 0m;
+                var hasCard = chequeTask.CardPayments != null && chequeTask.CardPayments.Any();
+                var paymentKind = hasCash && !hasCard ? "POS_CASH" :
+                    hasCard && !hasCash ? "POS_CARD" : null;
+                // For mixed payment or a fiscal device that does not return a signature:
+                // leave QR status awaiting manual reconciliation; never invent a receipt.
+                if (paymentKind != null && !string.IsNullOrWhiteSpace(docNo) &&
+                    !string.IsNullOrWhiteSpace(docSign) &&
+                    docNo != "0" && docSign != "0")
+                {
+                    var paidMinor = decimal.ToInt64(decimal.Round(
+                        chequeTask.ResultSum * 100m, 0, MidpointRounding.AwayFromZero));
+                    qrBridge.CaptureFiscalReceipt(chequeTask.OrderId, docNo,
+                        docNo + ":" + docSign, paymentKind, paidMinor);
+                }
+            }
             //var order = PluginContext.Operations.TryGetOrderById(chequeTask.OrderId);
             //_client.PluginToServerEvent(new PluginToServerEvent
             //{
