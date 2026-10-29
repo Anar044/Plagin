@@ -24,7 +24,12 @@ namespace Resto.Front.Api.HorecaControlPlugin
         [JsonProperty("BridgeToken")]
         public string BridgeToken { get; set; }
 
-        // PIN for a dedicated, least-privileged iikoFront operator with order-creation rights.\n        // Local protected config only; never commit a real PIN or log it.\n        [JsonProperty("OperatorPin")]\n        public string OperatorPin { get; set; }\n\n        [JsonProperty("PollSeconds")]
+        // PIN for a dedicated, least-privileged iikoFront operator with order-creation rights.
+        // Local protected config only; never commit a real PIN or log it.
+        [JsonProperty("OperatorPin")]
+        public string OperatorPin { get; set; }
+
+        [JsonProperty("PollSeconds")]
         public int PollSeconds { get; set; } = 10;
     }
 }
