@@ -11,6 +11,11 @@ public class FileConfig
     [JsonProperty("QrPosBridge")]
     public QrPosBridgeSettings QrPosBridge { get; set; }
 
+    // Optional per-device HMAC secret for existing Socket.IO server.
+    // Keep only in protected local smarthoreca.json; never commit/log its value.
+    [JsonProperty("SocketAuthSecret")]
+    public string SocketAuthSecret { get; set; }
+
 
 
     private static string fileName = "smarthoreca.json";
