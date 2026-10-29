@@ -23,10 +23,13 @@ Put into the `smarthoreca.json` selected by `FileConfig.GetConfig()`, alongside 
     "Url": "https://smarthoreca.pages.dev/api/qr-menu/pos-bridge",
     "PluginIngressToken": "SET_BY_ADMIN_NOT_IN_GIT",
     "BridgeToken": "SET_BY_ADMIN_NOT_IN_GIT",
+    "OperatorPin": "SET_ONLY_LOCALLY_ON_TEST_POS",
     "PollSeconds": 10
   }
 }
 ```
+
+Create a dedicated iikoFront operator with only the permissions required to open QR orders. Its personal PIN is required for SubmitChanges and must remain only in the protected POS configuration; no default PIN is provided. Never store a PIN in GitHub, logs or screenshots.
 
 Do not share live tokens in chats, logs, screenshots, repositories or browser code. Rotate any inadvertently exposed token. `PluginIngressToken` must match the backend's `PLUGIN_INGEST_TOKEN`; `BridgeToken` must match `QR_POS_BRIDGE_TOKEN`, set only on Cloudflare/server secrets.
 
