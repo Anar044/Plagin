@@ -20,6 +20,7 @@ Put into the `smarthoreca.json` selected by `FileConfig.GetConfig()`, alongside 
   "QrPosBridge": {
     "Enabled": false,
     "AllowOrderCreation": false,
+    "AllowKitchenPrint": false,
     "Url": "https://smarthoreca.pages.dev/api/qr-menu/pos-bridge",
     "PluginIngressToken": "SET_BY_ADMIN_NOT_IN_GIT",
     "BridgeToken": "SET_BY_ADMIN_NOT_IN_GIT",
@@ -35,7 +36,7 @@ Do not share live tokens in chats, logs, screenshots, repositories or browser co
 
 ## Fail-safe operation
 
-- Startup does nothing unless **both** `Enabled` and `AllowOrderCreation` are true and credentials + HTTPS URI have been validated.
+- Startup does nothing unless **all three** `Enabled`, `AllowOrderCreation` and `AllowKitchenPrint` are true and credentials + HTTPS URI have been validated. This is a safety gate: guests cannot submit QR orders until the plugin can actually send their dishes to the kitchen.
 - In production `Url` must be the **public** HTTPS Cloudflare Pages deployment host with exact endpoint path `/api/qr-menu/pos-bridge`.
 - Each request authenticates using BOTH secrets; backend validates `pluginId` and `departmentId` against the live plugin registry.
 - Hello advertises protocol v1. Pull returns 0 or 1 order, with a 90-second lease. For a retry, **never** create an order twice:
@@ -47,7 +48,7 @@ Do not share live tokens in chats, logs, screenshots, repositories or browser co
 - After iikoFront returns a real order ID, send `ackCreated`. If network fails, the local journal can recover the same order.
 - A successful cash-register fiscal operation can provide a genuine `DocumentNumber` and `DocumentSign`. The callback stores it as `FISCAL_PENDING` and the worker retries `ackFiscalized` until confirmed. Cash-only and card-only operations supported. Never infer fiscalization from simply closing the order.
 - If device does not return reliable document proof, or payment is mixed, mark for human reconciliation and **never invent a receipt number or RRN**.
-- No printing to kitchen is triggered automatically by this version; configure/test the proper workflow in iikoFront and implement exactly-once print management before enabling live service.
+- Kitchen service printing uses `PrintOrderItems` for the new order only, after the real POS order is created and acknowledged. Before invoking the printer, the plugin durably marks `IN_PROGRESS`. After success it marks `PRINTED`; on exception or process interruption it marks `CHECK_REQUIRED` and **does not repeat the print automatically**. The cashier must inspect kitchen tickets and reconcile the ambiguous outcome. The backend receives `ackKitchen` and stores it separately from `POS_OPEN` and `CLOSED`.
 
 ## Important V8/V8P5 compatibility
 
@@ -63,11 +64,12 @@ GitHub Actions: `Plugin Official NuGet Build`; the workflow compiles only, it do
 4. Place order from a table QR: verify D1 `AWAITING_POS → LEASED → POS_OPEN` and real iikoFront `Order.Id`, item count, price and section. Verify proper waiter assignment manually.
 5. Unplug network *after* POS creation but before ack. Restore; there must be only **one** POS order, retrieved by external ID.
 6. Attempt wrong restaurant/plugin ID, wrong product, stale price, no cash shift, unknown table ID — must reject without a POS order.
-7. Perform manual POS payment on the test cash register. Verify genuine fiscal device result, check `FISCAL_PENDING → FISCAL_ACKED`, D1 `CLOSED` only when receipt proof exists; test failed receipt and mixed payment do not falsely close the QR order.
-8. Check modifiers, printing to kitchen, shifts after midnight, offline tills, restaurant Chain isolation and refunds before any production release.
+7. Verify successful kitchen service printing, actual paper tickets and correct routing. Disconnect the printer or restart the plugin mid-print: confirm no automatic duplicate ticket; Smart Horeca must show `CHECK_REQUIRED`.
+8. Perform manual POS payment on the test cash register. Verify genuine fiscal device result, check `FISCAL_PENDING → FISCAL_ACKED`, D1 `CLOSED` only when receipt proof exists; test failed receipt and mixed payment do not falsely close the QR order.
+9. Check modifiers, shifts after midnight, offline tills, restaurant Chain isolation and refunds before any production release.
 
 ## Known limitations
 
-- Modifier and combo mapping, multi-size products, kitchen printing, guest note storage in POS, direct waiter mapping, merge-with-existing-table-order and refunds still require separate development and tests.
+- Modifier and combo mapping, multi-size products, direct waiter mapping, merge-with-existing-table-order and refunds still require separate development and tests. Basic kitchen printing and guest note transfer are now implemented, but have **not** been verified on a real printer. Unknown printer outcomes require human reconciliation.
 - Front V8 and V8P5 build is not a substitute for a matching installed DLL check and a test on the customer's Front runtime.
 - A successful fiscal callback does not provide a Payriff bank RRN. That is reserved for a later, separately verified online payment integration.
