@@ -239,7 +239,10 @@ namespace Resto.Front.Api.HorecaControlPlugin
                 job.Value<bool?>("onlinePaid") != false ||
                 job.Value<string>("rrn") != null)
                 throw new InvalidOperationException("Unsupported payment or currency contract.");
-            if (!string.Equals(identity.CurrencyCode, "AZN", StringComparison.OrdinalIgnoreCase))
+            // iikoFront may report AZN as "azn." in terminal configuration.
+            // Normalize harmless trailing punctuation, but reject other currencies.
+            var posCurrency = (identity.CurrencyCode ?? "").Trim().TrimEnd('.').Trim();
+            if (!string.Equals(posCurrency, "AZN", StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("POS currency does not match QR currency.");
             var mode = job.Value<string>("mode");
             if (mode != "TABLE" && mode != "FAST_FOOD")
