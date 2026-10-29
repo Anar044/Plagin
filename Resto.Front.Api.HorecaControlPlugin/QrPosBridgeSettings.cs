@@ -29,6 +29,10 @@ namespace Resto.Front.Api.HorecaControlPlugin
         [JsonProperty("OperatorPin")]
         public string OperatorPin { get; set; }
 
+        // Kitchen print is a separate opt-in because printing can fire physical printers.
+        [JsonProperty("AllowKitchenPrint")]
+        public bool AllowKitchenPrint { get; set; } = false;
+
         [JsonProperty("PollSeconds")]
         public int PollSeconds { get; set; } = 10;
     }
