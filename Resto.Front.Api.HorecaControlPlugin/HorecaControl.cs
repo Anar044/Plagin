@@ -376,6 +376,21 @@ namespace Resto.Front.Api.HorecaControlPlugin
                 // Подключаемся через ConnectionManager напрямую
                 var connectionManager = _serviceProvider.GetRequiredService<ISocketConnectionManager>();
                 Task.Run(() => connectionManager.Connect());
+
+                // Optional QR checkout bridge. Fully disabled on all existing tills
+                // unless an operator explicitly sets both local config flags and
+                // provides the two server-issued secrets. No fiscal operations here.
+                try
+                {
+                    var qrBridge = new QrPosBridgeService(pluginFileConfig.QrPosBridge, config);
+                    subscriptions.Add(qrBridge);
+                    qrBridge.Start();
+                }
+                catch (Exception qrError)
+                {
+                    // Never allow the new feature to interrupt legacy plugin functions.
+                    PluginContext.Log.Warn("QrPosBridge :: startup disabled: " + qrError.GetType().Name);
+                }
             }
             catch (LicenseRestrictionException ex)
             {
