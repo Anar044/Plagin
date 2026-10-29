@@ -34,9 +34,23 @@ Create a dedicated iikoFront operator with only the permissions required to open
 
 Do not share live tokens in chats, logs, screenshots, repositories or browser code. Rotate any inadvertently exposed token. `PluginIngressToken` must match the backend's `PLUGIN_INGEST_TOKEN`; `BridgeToken` must match `QR_POS_BRIDGE_TOKEN`, set only on Cloudflare/server secrets.
 
+## Предварительная HTTPS-диагностика без создания заказов
+
+Для первого подключения к отдельному тестовому Cloudflare Pages **не включайте** создание POS-заказов или кухонную печать. В локальном `smarthoreca.json`:
+
+- `Enabled=true` (запустить только HTTPS hello);
+- `AllowOrderCreation=false`, `AllowKitchenPrint=false`;
+- `Url` — реальный HTTPS-адрес отдельного тестового Pages проекта, заканчивается на `/api/qr-menu/pos-bridge`;
+- `PluginIngressToken` и `BridgeToken` совпадают с тестовыми серверными секретами;
+- `OperatorPin` **не нужен** до включения создания заказов.
+
+Плагин должен написать `QrPosBridge :: HTTPS diagnostic handshake accepted; no POS writes or kitchen printing.`. Сервер сохранит `can_create_order=0`, `can_ack_fiscal=0`, `can_print_kitchen=0`, а попытка `pull` будет отвергнута. Диагностический hello **не делает кассу готовой к приёму заказов**.
+
+Для включения реальных заказов **только на тестовой кассе**, после подтверждённой диагностики и проверки локального кухонного принтера, потребуются одновременно `AllowOrderCreation=true`, `AllowKitchenPrint=true` и `OperatorPin` отдельного минимально-привилегированного iikoFront оператора. Заменять существующий Socket.IO адрес и ключ HMAC не требуется.
+
 ## Fail-safe operation
 
-- Startup does nothing unless **all three** `Enabled`, `AllowOrderCreation` and `AllowKitchenPrint` are true and credentials + HTTPS URI have been validated. This is a safety gate: guests cannot submit QR orders until the plugin can actually send their dishes to the kitchen.
+- With `Enabled=false` (the default), startup does nothing. With only `Enabled=true`, credentials and HTTPS URL, the plugin performs **diagnostic hello only** and cannot pull, create, close or print any POS order. Full POS processing requires `AllowOrderCreation=true`, `AllowKitchenPrint=true` and a dedicated operator PIN. The backend requires all three full capabilities before enabling guest checkout.
 - In production `Url` must be the **public** HTTPS Cloudflare Pages deployment host with exact endpoint path `/api/qr-menu/pos-bridge`.
 - Each request authenticates using BOTH secrets; backend validates `pluginId` and `departmentId` against the live plugin registry.
 - Hello advertises protocol v1. Pull returns 0 or 1 order, with a 90-second lease. For a retry, **never** create an order twice:
@@ -49,6 +63,8 @@ Do not share live tokens in chats, logs, screenshots, repositories or browser co
 - A successful cash-register fiscal operation can provide a genuine `DocumentNumber` and `DocumentSign`. The callback stores it as `FISCAL_PENDING` and the worker retries `ackFiscalized` until confirmed. Cash-only and card-only operations supported. Never infer fiscalization from simply closing the order.
 - If device does not return reliable document proof, or payment is mixed, mark for human reconciliation and **never invent a receipt number or RRN**.
 - Kitchen service printing uses `PrintOrderItems` for the new order only, after the real POS order is created and acknowledged. Before invoking the printer, the plugin durably marks `IN_PROGRESS`. After success it marks `PRINTED`; on exception or process interruption it marks `CHECK_REQUIRED` and **does not repeat the print automatically**. The cashier must inspect kitchen tickets and reconcile the ambiguous outcome. The backend receives `ackKitchen` and stores it separately from `POS_OPEN` and `CLOSED`.
+
+Дополнительная инструкция для отдельной тестовой D1: [QR_POS_STAGING_DIAGNOSTICS_RU.md](https://github.com/Anar044/anarsystem/blob/feature/qr-order-internal-core-20261029/docs/QR_POS_STAGING_DIAGNOSTICS_RU.md).
 
 ## Important V8/V8P5 compatibility
 
