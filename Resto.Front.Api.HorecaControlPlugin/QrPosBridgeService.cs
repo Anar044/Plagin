@@ -67,7 +67,7 @@ namespace Resto.Front.Api.HorecaControlPlugin
             reason = "";
             if (string.IsNullOrWhiteSpace(settings.PluginIngressToken) ||
                 string.IsNullOrWhiteSpace(settings.BridgeToken) ||
-                string.IsNullOrWhiteSpace(settings.OperatorPin))
+                string.IsNullOrWhiteSpace(settings.OperatorPin) || !settings.AllowKitchenPrint)
             {
                 reason = "one or both bridge credentials are missing";
                 return false;
@@ -142,13 +142,16 @@ namespace Resto.Front.Api.HorecaControlPlugin
                         var hello = await SendAsync(Command("hello", new {
                             contractVersion = 1,
                             canCreateOrder = true,
-                            canAcknowledgeFiscal = true
+                            canAcknowledgeFiscal = true,
+                            canPrintKitchen = settings.AllowKitchenPrint
                         }), ct).ConfigureAwait(false);
                         ready = hello.Value<bool?>("accepted") == true;
                         if (ready) lastHello = DateTime.UtcNow;
                     }
                     if (ready)
                     {
+                        await FlushCreatedAcknowledgementsAsync(ct).ConfigureAwait(false);
+                        await FlushKitchenAcknowledgementsAsync(ct).ConfigureAwait(false);
                         await FlushFiscalAcknowledgementsAsync(ct).ConfigureAwait(false);
                         var next = await SendAsync(Command("pull"), ct).ConfigureAwait(false);
                         var job = next["job"];
@@ -216,12 +219,9 @@ namespace Resto.Front.Api.HorecaControlPlugin
                 return;
             }
 
-            // Never report success before POS returned a real persisted order ID.
-            await SendAsync(Command("ackCreated", new {
-                externalOrderId = externalId,
-                posOrderId = posOrder.Id.ToString("D"),
-                posOrderNumber = posOrder.Number.ToString(CultureInfo.InvariantCulture)
-            }), ct).ConfigureAwait(false);
+            // Durable ack + physical print are resumed from the journal after a restart.
+            await FlushCreatedAcknowledgementsAsync(ct).ConfigureAwait(false);
+            await FlushKitchenAcknowledgementsAsync(ct).ConfigureAwait(false);
         }
 
         private static IOrder FindExisting(string externalId)
@@ -339,7 +339,11 @@ namespace Resto.Front.Api.HorecaControlPlugin
                 externalOrderId = externalId,
                 status,
                 posOrderId = order?.Id.ToString("D"),
+                posOrderNumber = order?.Number.ToString(CultureInfo.InvariantCulture),
                 expectedMinor,
+                createdAcked = false,
+                kitchenStatus = "NOT_ATTEMPTED",
+                kitchenAcked = false,
                 createdAtUtc = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture)
             });
             lock (journalSync)
