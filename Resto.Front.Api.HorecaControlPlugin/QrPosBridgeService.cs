@@ -454,7 +454,7 @@ namespace Resto.Front.Api.HorecaControlPlugin
         /// </summary>
         private void TryPrintKitchen(string file, JObject entry)
         {
-            var current = entry.Value<string>("kitchenStatus") ?? "NOT_ATTEMPTED";
+            var current = entry.Value<string>("kitchenStatus") ?? "CHECK_REQUIRED";
             if (current == "PRINTED" || current == "CHECK_REQUIRED") return;
             if (current == "IN_PROGRESS")
             {
@@ -512,7 +512,15 @@ namespace Resto.Front.Api.HorecaControlPlugin
                 lock (journalSync)
                     entry = JObject.Parse(File.ReadAllText(file, Encoding.UTF8));
                 if (entry.Value<bool?>("createdAcked") != true) continue;
-                var kitchenStatus = entry.Value<string>("kitchenStatus") ?? "NOT_ATTEMPTED";
+                // Legacy QR journal records might predate kitchen-dispatch tracking.
+                // Their print outcome is unknown: never send them to the printer again.
+                if (entry["kitchenStatus"] == null)
+                {
+                    SetKitchenState(file, "CHECK_REQUIRED");
+                    lock (journalSync)
+                        entry = JObject.Parse(File.ReadAllText(file, Encoding.UTF8));
+                }
+                var kitchenStatus = entry.Value<string>("kitchenStatus") ?? "CHECK_REQUIRED";
                 if (kitchenStatus == "NOT_ATTEMPTED" || kitchenStatus == "IN_PROGRESS")
                 {
                     TryPrintKitchen(file, entry);
