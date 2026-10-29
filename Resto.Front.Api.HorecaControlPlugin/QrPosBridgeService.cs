@@ -2,6 +2,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Resto.Front.Api.Data.Assortment;
 using Resto.Front.Api.Data.Orders;
+using Resto.Front.Api.Extensions;
 using Resto.Front.Api.Data.Organization.Sections;
 using System;
 using System.Collections.Generic;
@@ -305,7 +306,7 @@ namespace Resto.Front.Api.HorecaControlPlugin
             var guest = edit.AddOrderGuest(null, newOrder);
             foreach (var item in plan.Items)
                 edit.AddOrderProductItem(item.Quantity, item.Product, newOrder, guest, null);
-            var created = operations.SubmitChanges(operations.GetDefaultCredentials(), edit);
+            var created = operations.SubmitChanges(operations.GetCredentials(), edit);
             return created.Get(newOrder);
         }
 
