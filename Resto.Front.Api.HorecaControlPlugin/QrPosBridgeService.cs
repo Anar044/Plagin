@@ -274,6 +274,11 @@ namespace Resto.Front.Api.HorecaControlPlugin
                     throw new InvalidOperationException("Invalid QR price or quantity.");
                 if (product.Type != ProductType.Dish || product.Template != null || product.Scale != null)
                     throw new InvalidOperationException("QR product requires compound or size configuration.");
+                // Until QR modifier mapping is implemented, reject products whose
+                // configured modifier groups could create a wrong kitchen recipe.
+                if (operations.GetSimpleModifiers(product, null).Any() ||
+                    operations.GetGroupModifiers(product, null).Any())
+                    throw new InvalidOperationException("QR product modifiers are not yet supported.");
                 // NOTE: required modifiers and discounts need separate mapping; disallow mismatches.
                 var livePrice = operations.GetPrice(product, null, null, DateTime.Now);
                 var liveMinor = decimal.ToInt64(decimal.Round(livePrice * 100m, 0, MidpointRounding.AwayFromZero));
