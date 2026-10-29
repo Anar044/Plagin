@@ -47,7 +47,7 @@ namespace Resto.Front.Api.HorecaControlPlugin
 
         public void Start()
         {
-            if (!settings.Enabled || !settings.AllowOrderCreation)
+            if (!settings.Enabled)
             {
                 PluginContext.Log.Info("QrPosBridge :: disabled (no changes to POS orders).");
                 return;
@@ -59,17 +59,26 @@ namespace Resto.Front.Api.HorecaControlPlugin
             }
             Directory.CreateDirectory(journalDirectory);
             runningTask = Task.Run(() => RunAsync(stop.Token));
-            PluginContext.Log.Info("QrPosBridge :: opt-in processing started.");
+            PluginContext.Log.Info(settings.AllowOrderCreation
+                ? "QrPosBridge :: opt-in processing started."
+                : "QrPosBridge :: diagnostics only (no polling, POS orders or kitchen printing).");
         }
 
         private bool TryValidateConfiguration(out string reason)
         {
             reason = "";
             if (string.IsNullOrWhiteSpace(settings.PluginIngressToken) ||
-                string.IsNullOrWhiteSpace(settings.BridgeToken) ||
-                string.IsNullOrWhiteSpace(settings.OperatorPin) || !settings.AllowKitchenPrint)
+                string.IsNullOrWhiteSpace(settings.BridgeToken))
             {
-                reason = "one or both bridge credentials are missing";
+                reason = "QR bridge credentials are missing";
+                return false;
+            }
+            // Diagnostics can authenticate the connection without POS permissions.
+            // The dangerous full workflow requires explicit independent opt-ins.
+            if (settings.AllowOrderCreation &&
+                (string.IsNullOrWhiteSpace(settings.OperatorPin) || !settings.AllowKitchenPrint))
+            {
+                reason = "POS creation requires an operator PIN and kitchen-print opt-in";
                 return false;
             }
             if (identity.PluginId == Guid.Empty || identity.DepartmentId == Guid.Empty)
@@ -141,14 +150,14 @@ namespace Resto.Front.Api.HorecaControlPlugin
                     {
                         var hello = await SendAsync(Command("hello", new {
                             contractVersion = 1,
-                            canCreateOrder = true,
-                            canAcknowledgeFiscal = true,
-                            canPrintKitchen = settings.AllowKitchenPrint
+                            canCreateOrder = settings.AllowOrderCreation,
+                            canAcknowledgeFiscal = settings.AllowOrderCreation,
+                            canPrintKitchen = settings.AllowOrderCreation && settings.AllowKitchenPrint
                         }), ct).ConfigureAwait(false);
                         ready = hello.Value<bool?>("accepted") == true;
                         if (ready) lastHello = DateTime.UtcNow;
                     }
-                    if (ready)
+                    if (ready && settings.AllowOrderCreation)
                     {
                         await FlushCreatedAcknowledgementsAsync(ct).ConfigureAwait(false);
                         await FlushKitchenAcknowledgementsAsync(ct).ConfigureAwait(false);
