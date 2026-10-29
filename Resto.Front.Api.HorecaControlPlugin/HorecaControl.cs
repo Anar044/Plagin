@@ -41,6 +41,7 @@ namespace Resto.Front.Api.HorecaControlPlugin
         private readonly CompositeDisposable subscriptions = new();
         private readonly ServerEventHandler _eventHandler;
         private readonly IEventPublisher _eventPublisher;
+        private QrPosBridgeService _qrBridge;
         private IServiceProvider _serviceProvider;
         private readonly HorecaSqlite _context;
 
@@ -353,7 +354,7 @@ namespace Resto.Front.Api.HorecaControlPlugin
                 subscriptions.Add(new KitchenChangeNotifier(_serviceProvider));
                 subscriptions.Add(
                     PluginContext.Operations.RegisterChequeTaskProcessor(
-                        new HorecaControlChequeTaskProcessor(_serviceProvider)));
+                        new HorecaControlChequeTaskProcessor(_serviceProvider, () => _qrBridge)));
                 subscriptions.Add(
                     PluginContext.Notifications.CafeSessionOpening.Subscribe(CafeSessionOpeningSubscribe));
                 subscriptions.Add(
@@ -382,9 +383,9 @@ namespace Resto.Front.Api.HorecaControlPlugin
                 // provides the two server-issued secrets. No fiscal operations here.
                 try
                 {
-                    var qrBridge = new QrPosBridgeService(pluginFileConfig.QrPosBridge, config);
-                    subscriptions.Add(qrBridge);
-                    qrBridge.Start();
+                    _qrBridge = new QrPosBridgeService(pluginFileConfig.QrPosBridge, config);
+                    subscriptions.Add(_qrBridge);
+                    _qrBridge.Start();
                 }
                 catch (Exception qrError)
                 {
