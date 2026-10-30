@@ -44,6 +44,23 @@ Smart Horeca хранит снимок отдельно для пары `restaur
 
 Первый тест выполняйте только в изолированной тестовой D1. Если плагин не настроен на HTTPS QR Bridge или backend не имеет `PLUGIN_INGEST_TOKEN` и `QR_POS_BRIDGE_TOKEN`, список столов не поступит; в таком случае старый Socket.IO будет продолжать работу как прежде.
 
+## Один QR-ключ для тестовой синхронизации столов (30.10.2026)
+
+По решению владельца упростили **shared-test**: `PluginIngressToken` не нужен, искать старый глобальный `PLUGIN_INGEST_TOKEN` в Cloudflare и менять HMAC ключ **не требуется**. В защищённом локальном `smarthoreca.json` оставьте `PluginId` и `SocketAuthSecret`, добавьте только:
+
+```json
+"QrPosBridge": {
+  "Enabled": true,
+  "AllowOrderCreation": false,
+  "AllowKitchenPrint": false,
+  "Url": "https://feature-qr-order-internal-co.smarthoreca.pages.dev/api/qr-menu/pos-bridge",
+  "BridgeToken": "СОВПАДАЕТ_С_PREVIEW_QR_POS_BRIDGE_TOKEN",
+  "PollSeconds": 10
+}
+```
+
+На сервере QR Bridge сначала проверяет `QR_POS_BRIDGE_TOKEN`, затем точный allowlist `QR_TABLE_SYNC_PREVIEW_HOST/DEPARTMENT_ID/PLUGIN_ID` и регистрацию кассы в общем backend registry. В `shared-test` запрещены `pull`/все POS подтверждения/включение приёма гостевых заказов. Это только для отдельной тестовой кассы/preview; production-процедура привязки должна иметь индивидуальные полномочия каждого устройства. Полный режим создания заказа всё ещё требует `PluginIngressToken`.
+
 ## Предварительная HTTPS-диагностика без создания заказов
 
 Для первого подключения к отдельному тестовому Cloudflare Pages **не включайте** создание POS-заказов или кухонную печать. В локальном `smarthoreca.json`:
