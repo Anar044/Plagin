@@ -34,6 +34,16 @@ Create a dedicated iikoFront operator with only the permissions required to open
 
 Do not share live tokens in chats, logs, screenshots, repositories or browser code. Rotate any inadvertently exposed token. `PluginIngressToken` must match the backend's `PLUGIN_INGEST_TOKEN`; `BridgeToken` must match `QR_POS_BRIDGE_TOKEN`, set only on Cloudflare/server secrets.
 
+## Синхронизация столов и залов в Smart Horeca
+
+В этой тестовой ветке QR POS Bridge умеет выгружать **все доступные активные и неактивные столы** текущей терминальной группы без записи чего-либо в iikoFront. Используются `PluginContext.Operations.GetRestaurantSections()` и `GetTables()`, данные `ITable.Id`, `ITable.Name`, `ITable.Number`, `ITable.IsActive`, `ITable.RestaurantSection.Id/Name`.
+
+Передача: действие `tablesSnapshot` в тот же защищённый HTTPS `/api/qr-menu/pos-bridge` после успешного `hello`, примерно раз в 2 минуты. Это работает в безопасном режиме `Enabled=true`, `AllowOrderCreation=false`, `AllowKitchenPrint=false`, без PIN. Не меняет настройки старого Socket.IO.
+
+Smart Horeca хранит снимок отдельно для пары `restaurant_id + plugin_id`. Пользователь с правом `qr.manage` выбирает кассу выбранного ресторана и импортирует столы по залам. Новым столам назначаются индивидуальные QR-токены; для ранее импортированных `posTableId` токен никогда не заменяется автоматически.
+
+Первый тест выполняйте только в изолированной тестовой D1. Если плагин не настроен на HTTPS QR Bridge или backend не имеет `PLUGIN_INGEST_TOKEN` и `QR_POS_BRIDGE_TOKEN`, список столов не поступит; в таком случае старый Socket.IO будет продолжать работу как прежде.
+
 ## Предварительная HTTPS-диагностика без создания заказов
 
 Для первого подключения к отдельному тестовому Cloudflare Pages **не включайте** создание POS-заказов или кухонную печать. В локальном `smarthoreca.json`:
