@@ -339,6 +339,16 @@ namespace Resto.Front.Api.HorecaControlPlugin
 
         private QrCreationPlan Validate(JObject job)
         {
+            // Defense in depth: the former PAY_AT_POS QR path is prohibited.
+            // Even a misconfigured backend must not send unpaid jobs to iiko.
+            // The full Payriff settlement contract and fiscalization model are
+            // not yet implemented, so this diagnostic build rejects fulfillment.
+            var onlinePaymentVerified = job.Value<bool?>("onlinePaid") == true;
+            var paymentReference = job.Value<string>("paymentReference");
+            if (!onlinePaymentVerified || string.IsNullOrWhiteSpace(paymentReference) ||
+                job.Value<string>("paymentMethod") != "PAYRIFF")
+                throw new InvalidOperationException(
+                    "QR POS order refused: confirmed online payment is required.");
             if (job.Value<string>("currency") != "AZN" ||
                 job.Value<string>("paymentMethod") != "PAY_AT_POS" ||
                 job.Value<bool?>("onlinePaid") != false ||
