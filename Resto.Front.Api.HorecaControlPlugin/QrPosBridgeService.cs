@@ -174,15 +174,26 @@ namespace Resto.Front.Api.HorecaControlPlugin
                     // diagnostic-only mode, so Smart Horeca can generate table QRs.
                     if (ready && DateTime.UtcNow - lastTablesSnapshot > TimeSpan.FromMinutes(2))
                     {
-                        var snapshot = BuildTablesSnapshot();
-                        var uploaded = await SendAsync(Command("tablesSnapshot", new {
-                            tables = snapshot
-                        }), ct).ConfigureAwait(false);
-                        if (uploaded.Value<bool?>("accepted") == true)
+                        // Keep hello/diagnostic connectivity alive when the
+                        // preview has not yet been approved for table imports.
+                        // Throttle retries even after a rejected snapshot.
+                        lastTablesSnapshot = DateTime.UtcNow;
+                        try
                         {
-                            lastTablesSnapshot = DateTime.UtcNow;
-                            PluginContext.Log.Info("QrPosBridge :: POS table catalog synchronized (" +
-                                snapshot.Length + " tables; no POS writes).");
+                            var snapshot = BuildTablesSnapshot();
+                            var uploaded = await SendAsync(Command("tablesSnapshot", new {
+                                tables = snapshot
+                            }), ct).ConfigureAwait(false);
+                            if (uploaded.Value<bool?>("accepted") == true)
+                                PluginContext.Log.Info("QrPosBridge :: POS table catalog synchronized (" +
+                                    snapshot.Length + " tables; no POS writes).");
+                        }
+                        catch (InvalidOperationException e)
+                        {
+                            var safeStatus = e.Message.StartsWith("QR Bridge HTTP ", StringComparison.Ordinal)
+                                ? e.Message : e.GetType().Name;
+                            PluginContext.Log.Warn("QrPosBridge :: POS table catalog not synchronized: " +
+                                safeStatus + ". HTTPS hello remains active.");
                         }
                     }
                     if (ready && settings.AllowOrderCreation)
