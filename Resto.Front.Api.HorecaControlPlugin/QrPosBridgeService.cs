@@ -349,11 +349,14 @@ namespace Resto.Front.Api.HorecaControlPlugin
                 job.Value<string>("paymentMethod") != "PAYRIFF")
                 throw new InvalidOperationException(
                     "QR POS order refused: confirmed online payment is required.");
+            // This path is exclusively for a provider-verified paid purchase.
+            // Never permit the legacy PAY_AT_POS contract (an unpaid QR order).
             if (job.Value<string>("currency") != "AZN" ||
-                job.Value<string>("paymentMethod") != "PAY_AT_POS" ||
-                job.Value<bool?>("onlinePaid") != false ||
+                job.Value<string>("paymentMethod") != "PAYRIFF" ||
+                job.Value<bool?>("onlinePaid") != true ||
+                string.IsNullOrWhiteSpace(paymentReference) ||
                 job.Value<string>("rrn") != null)
-                throw new InvalidOperationException("Unsupported payment or currency contract.");
+                throw new InvalidOperationException("Unsupported online-paid QR contract.");
             // iikoFront may report AZN as "azn." in terminal configuration.
             // Normalize harmless trailing punctuation, but reject other currencies.
             var posCurrency = (identity.CurrencyCode ?? "").Trim().TrimEnd('.').Trim();
