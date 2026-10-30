@@ -235,15 +235,30 @@ namespace Resto.Front.Api.HorecaControlPlugin
             }
         }
 
+        private static HashSet<Guid> GetCurrentTerminalsGroupSectionIds()
+        {
+            var ops = PluginContext.Operations;
+            var hostGroup = ops.GetHostTerminalsGroup();
+            if (hostGroup == null || hostGroup.Id == Guid.Empty)
+                throw new InvalidOperationException("POS terminal group is unavailable.");
+
+            // GetRestaurantSections() can expose sections from other terminal
+            // groups on this restaurant server. Bind the catalog explicitly
+            // to the host terminal group, and never fall back to all sections.
+            var sectionIds = new HashSet<Guid>(
+                ops.GetTerminalsGroupRestaurantSections(hostGroup)
+                    .Where(s => s != null && s.TerminalsGroup != null &&
+                        s.TerminalsGroup.Id == hostGroup.Id)
+                    .Select(s => s.Id));
+            if (sectionIds.Count == 0)
+                throw new InvalidOperationException("No restaurant sections belong to this POS terminal group.");
+            return sectionIds;
+        }
+
         private object[] BuildTablesSnapshot()
         {
             var ops = PluginContext.Operations;
-            // GetRestaurantSections is scoped to the current terminals group.
-            // Never export other departments' or terminal groups' table layouts.
-            var sections = ops.GetRestaurantSections().ToList();
-            var sectionIds = new HashSet<Guid>(sections.Select(x => x.Id));
-            if (sectionIds.Count == 0)
-                throw new InvalidOperationException("No restaurant sections available to this POS.");
+            var sectionIds = GetCurrentTerminalsGroupSectionIds();
             var tables = ops.GetTables()
                 .Where(t => t.RestaurantSection != null &&
                     sectionIds.Contains(t.RestaurantSection.Id))
@@ -346,9 +361,12 @@ namespace Resto.Front.Api.HorecaControlPlugin
             {
                 if (!Guid.TryParse(posTable, out var tableId) || tableId == Guid.Empty)
                     throw new InvalidOperationException("QR table has no mapped POS table ID.");
-                table = operations.GetTables().FirstOrDefault(x => x.Id == tableId);
+                var sectionIds = GetCurrentTerminalsGroupSectionIds();
+                table = operations.GetTables().FirstOrDefault(x =>
+                    x.Id == tableId && x.RestaurantSection != null &&
+                    sectionIds.Contains(x.RestaurantSection.Id));
                 if (table == null)
-                    throw new InvalidOperationException("Mapped POS table is not available on this terminal.");
+                    throw new InvalidOperationException("Mapped POS table is not in this terminal group.");
             }
             var items = job["items"] as JArray;
             if (items == null || items.Count == 0 || items.Count > 40)
