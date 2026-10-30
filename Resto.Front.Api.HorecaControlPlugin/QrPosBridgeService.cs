@@ -67,10 +67,18 @@ namespace Resto.Front.Api.HorecaControlPlugin
         private bool TryValidateConfiguration(out string reason)
         {
             reason = "";
-            if (string.IsNullOrWhiteSpace(settings.PluginIngressToken) ||
-                string.IsNullOrWhiteSpace(settings.BridgeToken))
+            if (string.IsNullOrWhiteSpace(settings.BridgeToken))
             {
-                reason = "QR bridge credentials are missing";
+                reason = "QR bridge token is missing";
+                return false;
+            }
+            // The single-key mode is diagnostic-only and is scoped on the
+            // server to a single test plugin, restaurant and preview host.
+            // Non-diagnostic order creation must retain both credentials.
+            if (settings.AllowOrderCreation &&
+                string.IsNullOrWhiteSpace(settings.PluginIngressToken))
+            {
+                reason = "Order creation requires full plugin ingress credentials";
                 return false;
             }
             // Diagnostics can authenticate the connection without POS permissions.
@@ -102,7 +110,8 @@ namespace Resto.Front.Api.HorecaControlPlugin
             var json = JsonConvert.SerializeObject(command);
             using (var request = new HttpRequestMessage(HttpMethod.Post, settings.Url))
             {
-                request.Headers.TryAddWithoutValidation("X-Plugin-Token", settings.PluginIngressToken);
+                if (!string.IsNullOrWhiteSpace(settings.PluginIngressToken))
+                    request.Headers.TryAddWithoutValidation("X-Plugin-Token", settings.PluginIngressToken);
                 request.Headers.TryAddWithoutValidation("X-QR-Bridge-Token", settings.BridgeToken);
                 request.Headers.TryAddWithoutValidation("Accept", "application/json");
                 request.Content = new StringContent(json, Encoding.UTF8, "application/json");
