@@ -141,6 +141,7 @@ namespace Resto.Front.Api.HorecaControlPlugin
         private async Task RunAsync(CancellationToken ct)
         {
             var lastHello = DateTime.MinValue;
+            var lastTablesSnapshot = DateTime.MinValue;
             var ready = false;
             var handshakeLogged = false;
             while (!ct.IsCancellationRequested)
@@ -166,6 +167,22 @@ namespace Resto.Front.Api.HorecaControlPlugin
                                     : "QrPosBridge :: HTTPS diagnostic handshake accepted; no POS writes or kitchen printing.");
                                 handshakeLogged = true;
                             }
+                        }
+                    }
+                    // Safe and read-only. No PIN or kitchen printing needed.
+                    // Periodically refresh the section/table catalog, even during
+                    // diagnostic-only mode, so Smart Horeca can generate table QRs.
+                    if (ready && DateTime.UtcNow - lastTablesSnapshot > TimeSpan.FromMinutes(2))
+                    {
+                        var snapshot = BuildTablesSnapshot();
+                        var uploaded = await SendAsync(Command("tablesSnapshot", new {
+                            tables = snapshot
+                        }), ct).ConfigureAwait(false);
+                        if (uploaded.Value<bool?>("accepted") == true)
+                        {
+                            lastTablesSnapshot = DateTime.UtcNow;
+                            PluginContext.Log.Info("QrPosBridge :: POS table catalog synchronized (" +
+                                snapshot.Length + " tables; no POS writes).");
                         }
                     }
                     if (ready && settings.AllowOrderCreation)
@@ -196,6 +213,36 @@ namespace Resto.Front.Api.HorecaControlPlugin
                 }
                 catch (OperationCanceledException) { break; }
             }
+        }
+
+        private object[] BuildTablesSnapshot()
+        {
+            var ops = PluginContext.Operations;
+            // GetRestaurantSections is scoped to the current terminals group.
+            // Never export other departments' or terminal groups' table layouts.
+            var sections = ops.GetRestaurantSections().ToList();
+            var sectionIds = new HashSet<Guid>(sections.Select(x => x.Id));
+            if (sectionIds.Count == 0)
+                throw new InvalidOperationException("No restaurant sections available to this POS.");
+            var tables = ops.GetTables()
+                .Where(t => t.RestaurantSection != null &&
+                    sectionIds.Contains(t.RestaurantSection.Id))
+                .OrderBy(t => t.RestaurantSection.Name)
+                .ThenBy(t => t.Number)
+                .ThenBy(t => t.Id)
+                .ToList();
+            if (tables.Count > 400)
+                throw new InvalidOperationException("POS has too many tables for QR catalog.");
+            return tables.Select(t => (object)new {
+                posTableId = t.Id.ToString("D"),
+                sectionId = t.RestaurantSection.Id.ToString("D"),
+                sectionName = t.RestaurantSection.Name,
+                name = string.IsNullOrWhiteSpace(t.Name)
+                    ? "Стол " + t.Number.ToString(CultureInfo.InvariantCulture)
+                    : t.Name,
+                number = t.Number,
+                isActive = t.IsActive
+            }).ToArray();
         }
 
         private async Task HandleJobAsync(JObject job, CancellationToken ct)
