@@ -2,6 +2,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Resto.Front.Api.Data.Assortment;
 using Resto.Front.Api.Data.Orders;
+using Resto.Front.Api.Data.Payments;
 using Resto.Front.Api.Extensions;
 using Resto.Front.Api.Data.Organization.Sections;
 using System;
@@ -155,6 +156,12 @@ namespace Resto.Front.Api.HorecaControlPlugin
             return obj;
         }
 
+        private static bool PaymentTypeReady()
+        {
+            try { return ResolvePayriffType() != null; }
+            catch (InvalidOperationException) { return false; }
+        }
+
         private async Task RunAsync(CancellationToken ct)
         {
             var lastHello = DateTime.MinValue;
@@ -169,9 +176,10 @@ namespace Resto.Front.Api.HorecaControlPlugin
                     {
                         var hello = await SendAsync(Command("hello", new {
                             contractVersion = 1,
-                            canCreateOrder = settings.AllowOrderCreation,
-                            canAcknowledgeFiscal = false, // external Payriff tender is NOT yet fiscalized in POS
-                            canPrintKitchen = settings.AllowOrderCreation && settings.AllowKitchenPrint
+                            canCreateOrder = settings.AllowOrderCreation && PaymentTypeReady(),
+                            canAcknowledgeFiscal = false, // no counterfeit fiscal acknowledgement
+                            canPrintKitchen = settings.AllowOrderCreation &&
+                                settings.AllowKitchenPrint && PaymentTypeReady()
                         }), ct).ConfigureAwait(false);
                         ready = hello.Value<bool?>("accepted") == true;
                         if (ready)
@@ -431,7 +439,22 @@ namespace Resto.Front.Api.HorecaControlPlugin
             if (guestNote.Length > 280 || guestNote.Any(char.IsControl))
                 throw new InvalidOperationException("QR comment contains invalid characters.");
             return new QrCreationPlan { Table = table, Items = planned, Mode = mode,
-                GuestNote = guestNote, PaymentReference = paymentReference };
+                GuestNote = guestNote, PaymentReference = paymentReference,
+                TotalMinor = totalMinor };
+        }
+
+        // Never use a generic cash/card type to represent an online Payriff
+        // charge. A unique dedicated external Payriff type is mandatory.
+        private static IPaymentType ResolvePayriffType()
+        {
+            var types = PluginContext.Operations.GetPaymentTypes()
+                .Where(x => x.Kind == PaymentTypeKind.External &&
+                    string.Equals(x.Name, "Payriff", StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+            if (types.Length != 1)
+                throw new InvalidOperationException(
+                    "Configure ONE external payment type named Payriff in iikoOffice.");
+            return types[0];
         }
 
         private IOrder CreatePosOrder(string externalId, QrCreationPlan plan)
@@ -454,6 +477,12 @@ namespace Resto.Front.Api.HorecaControlPlugin
             var guest = edit.AddOrderGuest(null, newOrder);
             foreach (var item in plan.Items)
                 edit.AddOrderProductItem(item.Quantity, item.Product, newOrder, guest, null);
+            // Processed OUTSIDE iikoFront by Payriff. No cash register and no
+            // acquiring operation should be performed here: not a second debit.
+            // Record the external tender in the SAME edit session as the order.
+            var paidType = ResolvePayriffType();
+            edit.AddExternalPaymentItem(plan.TotalMinor / 100m, true, null, null,
+                paidType, newOrder);
             var created = operations.SubmitChanges(operations.AuthenticateByPin(settings.OperatorPin), edit);
             return created.Get(newOrder);
         }
@@ -747,6 +776,7 @@ namespace Resto.Front.Api.HorecaControlPlugin
             public string Mode { get; set; }
             public string GuestNote { get; set; }
             public string PaymentReference { get; set; }
+            public long TotalMinor { get; set; }
         }
     }
 }
