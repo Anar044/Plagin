@@ -405,6 +405,17 @@ namespace Resto.Front.Api.HorecaControlPlugin
                 {
                     StoreJournal(externalId, "RECOVERED", posOrder, job.Value<long>("totalMinor"));
                 }
+                else
+                {
+                    // A crash may occur after SubmitChanges but BEFORE
+                    // StoreJournal(CREATED). The external POS id is durable,
+                    // so resume from PREPARED without creating a second order.
+                    var journal = JObject.Parse(File.ReadAllText(
+                        JournalPath(externalId), Encoding.UTF8));
+                    if (journal.Value<string>("status") == "PREPARED")
+                        StoreJournal(externalId, "RECOVERED", posOrder,
+                            job.Value<long>("totalMinor"));
+                }
             }
             catch (Exception e)
             {
