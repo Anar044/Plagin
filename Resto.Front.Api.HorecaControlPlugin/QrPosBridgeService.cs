@@ -72,21 +72,28 @@ namespace Resto.Front.Api.HorecaControlPlugin
                 reason = "QR bridge token is missing";
                 return false;
             }
-            // The single-key mode is diagnostic-only and is scoped on the
-            // server to a single test plugin, restaurant and preview host.
-            // Non-diagnostic order creation must retain both credentials.
+            // Shared test D1 is allowed for the exact plugin/restaurant pair
+            // on the designated HTTPS Preview. Server checks BridgeToken and
+            // registry. Never allow one-key order writes on arbitrary hosts.
             if (settings.AllowOrderCreation &&
-                string.IsNullOrWhiteSpace(settings.PluginIngressToken))
+                string.IsNullOrWhiteSpace(settings.PluginIngressToken) &&
+                !string.Equals(new Uri(settings.Url).Host,
+                    "feature-qr-order-internal-co.smarthoreca.pages.dev",
+                    StringComparison.OrdinalIgnoreCase))
             {
-                reason = "Order creation requires full plugin ingress credentials";
+                reason = "One-key POS creation is restricted to QR Preview";
                 return false;
             }
-            // Diagnostics can authenticate the connection without POS permissions.
-            // The dangerous full workflow requires explicit independent opt-ins.
-            if (settings.AllowOrderCreation &&
-                (string.IsNullOrWhiteSpace(settings.OperatorPin) || !settings.AllowKitchenPrint))
+            // POS creation and physical kitchen printing are independent
+            // approvals. Never print merely because an online payment exists.
+            if (settings.AllowOrderCreation && string.IsNullOrWhiteSpace(settings.OperatorPin))
             {
-                reason = "POS creation requires an operator PIN and kitchen-print opt-in";
+                reason = "POS creation requires an operator PIN";
+                return false;
+            }
+            if (settings.AllowKitchenPrint && !settings.AllowOrderCreation)
+            {
+                reason = "Kitchen printing requires POS creation opt-in";
                 return false;
             }
             if (identity.PluginId == Guid.Empty || identity.DepartmentId == Guid.Empty)
@@ -162,7 +169,7 @@ namespace Resto.Front.Api.HorecaControlPlugin
                         var hello = await SendAsync(Command("hello", new {
                             contractVersion = 1,
                             canCreateOrder = settings.AllowOrderCreation,
-                            canAcknowledgeFiscal = settings.AllowOrderCreation,
+                            canAcknowledgeFiscal = false, // external Payriff tender is NOT yet fiscalized in POS
                             canPrintKitchen = settings.AllowOrderCreation && settings.AllowKitchenPrint
                         }), ct).ConfigureAwait(false);
                         ready = hello.Value<bool?>("accepted") == true;
@@ -208,8 +215,11 @@ namespace Resto.Front.Api.HorecaControlPlugin
                     if (ready && settings.AllowOrderCreation)
                     {
                         await FlushCreatedAcknowledgementsAsync(ct).ConfigureAwait(false);
-                        await FlushKitchenAcknowledgementsAsync(ct).ConfigureAwait(false);
-                        await FlushFiscalAcknowledgementsAsync(ct).ConfigureAwait(false);
+                        if (settings.AllowKitchenPrint)
+                            await FlushKitchenAcknowledgementsAsync(ct).ConfigureAwait(false);
+                        // PAY_AT_POS fiscal acknowledgements must not be sent for
+                        // already externally paid Payriff orders.
+                        // Fiscal/tender reconciliation will be a separate contract.
                         var next = await SendAsync(Command("pull"), ct).ConfigureAwait(false);
                         var job = next["job"];
                         if (job is JObject order)
