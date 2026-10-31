@@ -295,7 +295,10 @@ namespace Resto.Front.Api.HorecaControlPlugin
                     {
                         await FlushCreatedAcknowledgementsAsync(ct).ConfigureAwait(false);
                         if (settings.AllowKitchenPrint)
+                        {
                             await FlushKitchenAcknowledgementsAsync(ct).ConfigureAwait(false);
+                            await FlushClosedAcknowledgementsAsync(ct).ConfigureAwait(false);
+                        }
                         // PAY_AT_POS fiscal acknowledgements must not be sent for
                         // already externally paid Payriff orders.
                         // Fiscal/tender reconciliation will be a separate contract.
@@ -415,7 +418,11 @@ namespace Resto.Front.Api.HorecaControlPlugin
 
             // Durable ack + physical print are resumed from the journal after a restart.
             await FlushCreatedAcknowledgementsAsync(ct).ConfigureAwait(false);
-            await FlushKitchenAcknowledgementsAsync(ct).ConfigureAwait(false);
+            if (settings.AllowKitchenPrint)
+            {
+                await FlushKitchenAcknowledgementsAsync(ct).ConfigureAwait(false);
+                await FlushClosedAcknowledgementsAsync(ct).ConfigureAwait(false);
+            }
         }
 
         private static IOrder FindExisting(string externalId)
@@ -584,6 +591,8 @@ namespace Resto.Front.Api.HorecaControlPlugin
                 createdAcked = false,
                 kitchenStatus = "NOT_ATTEMPTED",
                 kitchenAcked = false,
+                posCloseStatus = "NOT_ATTEMPTED",
+                posClosedAcked = false,
                 createdAtUtc = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture)
             });
             lock (journalSync)
@@ -781,6 +790,85 @@ namespace Resto.Front.Api.HorecaControlPlugin
                     var latest = JObject.Parse(File.ReadAllText(file, Encoding.UTF8));
                     if (latest.Value<string>("kitchenStatus") != kitchenStatus) continue;
                     latest["kitchenAcked"] = true;
+                    PersistJournal(file, latest.ToString(Formatting.None));
+                }
+            }
+        }
+
+        // A processed external Payriff tender can close the order in iikoFront
+        // without another card charge. Kitchen print must have been acknowledged.
+        // Persist IN_PROGRESS BEFORE PayOrder so crash/timeouts never repeat
+        // fiscal operations automatically.
+        private async Task FlushClosedAcknowledgementsAsync(CancellationToken ct)
+        {
+            if (!settings.AllowKitchenPrint || !Directory.Exists(journalDirectory)) return;
+            foreach (var file in Directory.EnumerateFiles(journalDirectory, "*.json"))
+            {
+                ct.ThrowIfCancellationRequested();
+                JObject entry;
+                lock (journalSync)
+                    entry = JObject.Parse(File.ReadAllText(file, Encoding.UTF8));
+                if (!Guid.TryParse(entry.Value<string>("posOrderId"), out var posOrderId) ||
+                    entry.Value<bool?>("createdAcked") != true ||
+                    entry.Value<bool?>("kitchenAcked") != true ||
+                    entry.Value<string>("kitchenStatus") != "PRINTED") continue;
+                if (entry["posCloseStatus"] == null)
+                {
+                    // Legacy journals have unknown close status.
+                    PluginContext.Log.Warn("QrPosBridge :: old POS journal requires manual close reconciliation.");
+                    continue;
+                }
+                var status = entry.Value<string>("posCloseStatus");
+                if (status == "NOT_ATTEMPTED")
+                {
+                    lock (journalSync)
+                    {
+                        var next = JObject.Parse(File.ReadAllText(file, Encoding.UTF8));
+                        next["posCloseStatus"] = "IN_PROGRESS";
+                        PersistJournal(file, next.ToString(Formatting.None));
+                    }
+                    try
+                    {
+                        var ops = PluginContext.Operations;
+                        var live = ops.GetOrderById(posOrderId);
+                        if (live == null) throw new InvalidOperationException("POS order not found.");
+                        // This uses the previously processed Payriff payment.
+                        // Never call a bank payment processor for another debit.
+                        ops.PayOrder(ops.AuthenticateByPin(settings.OperatorPin), live);
+                        var closed = ops.GetOrderById(posOrderId);
+                        if (closed == null || closed.Status != OrderStatus.Closed)
+                            throw new InvalidOperationException("iikoFront has not confirmed order closure.");
+                        lock (journalSync)
+                        {
+                            var next = JObject.Parse(File.ReadAllText(file, Encoding.UTF8));
+                            next["posCloseStatus"] = "CLOSED";
+                            PersistJournal(file, next.ToString(Formatting.None));
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        lock (journalSync)
+                        {
+                            var next = JObject.Parse(File.ReadAllText(file, Encoding.UTF8));
+                            next["posCloseStatus"] = "CHECK_REQUIRED";
+                            PersistJournal(file, next.ToString(Formatting.None));
+                        }
+                        PluginContext.Log.Warn("QrPosBridge :: POS close uncertain; do not close twice: " +
+                            ex.GetType().Name);
+                    }
+                }
+                lock (journalSync)
+                    entry = JObject.Parse(File.ReadAllText(file, Encoding.UTF8));
+                if (entry.Value<string>("posCloseStatus") != "CLOSED" ||
+                    entry.Value<bool?>("posClosedAcked") == true) continue;
+                await SendAsync(Command("ackClosed", new {
+                    externalOrderId = entry.Value<string>("externalOrderId"),
+                    posOrderId = entry.Value<string>("posOrderId")
+                }), ct).ConfigureAwait(false);
+                lock (journalSync)
+                {
+                    var latest = JObject.Parse(File.ReadAllText(file, Encoding.UTF8));
+                    latest["posClosedAcked"] = true;
                     PersistJournal(file, latest.ToString(Formatting.None));
                 }
             }
