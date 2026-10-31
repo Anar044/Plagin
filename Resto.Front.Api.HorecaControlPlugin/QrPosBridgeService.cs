@@ -431,7 +431,7 @@ namespace Resto.Front.Api.HorecaControlPlugin
             if (guestNote.Length > 280 || guestNote.Any(char.IsControl))
                 throw new InvalidOperationException("QR comment contains invalid characters.");
             return new QrCreationPlan { Table = table, Items = planned, Mode = mode,
-                GuestNote = guestNote };
+                GuestNote = guestNote, PaymentReference = paymentReference };
         }
 
         private IOrder CreatePosOrder(string externalId, QrCreationPlan plan)
@@ -443,8 +443,14 @@ namespace Resto.Front.Api.HorecaControlPlugin
             var newOrder = edit.CreateOrder(tables);
             edit.ChangeOrderOriginName(OriginName, newOrder);
             edit.AddOrderExternalData(ExternalOrderKey, externalId, false, newOrder);
+            // The guest has ALREADY paid externally through Payriff.
+            // This is a non-fiscal open POS order until its external tender is
+            // reconciled. Mark it clearly so staff do not collect a second time.
+            var onlineNote = "PAID ONLINE / PAYRIFF - DO NOT CHARGE AGAIN. Ref: " +
+                plan.PaymentReference;
             if (!string.IsNullOrWhiteSpace(plan.GuestNote))
-                edit.ChangeOrderComment(plan.GuestNote, newOrder);
+                onlineNote += " | Guest: " + plan.GuestNote;
+            edit.ChangeOrderComment(onlineNote, newOrder);
             var guest = edit.AddOrderGuest(null, newOrder);
             foreach (var item in plan.Items)
                 edit.AddOrderProductItem(item.Quantity, item.Product, newOrder, guest, null);
@@ -740,6 +746,7 @@ namespace Resto.Front.Api.HorecaControlPlugin
             public List<QrCreationItem> Items { get; set; }
             public string Mode { get; set; }
             public string GuestNote { get; set; }
+            public string PaymentReference { get; set; }
         }
     }
 }
