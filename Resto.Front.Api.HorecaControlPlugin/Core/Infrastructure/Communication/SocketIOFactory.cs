@@ -7,6 +7,7 @@ using SocketIOClient.Serializer.NewtonsoftJson;
 using System;
 using System.Collections.Specialized;
 using System.Net.Http;
+using System.Runtime.CompilerServices;
 
 namespace Resto.Front.Api.HorecaControlPlugin.Core.Infrastructure.Communication
 {
@@ -15,6 +16,20 @@ namespace Resto.Front.Api.HorecaControlPlugin.Core.Infrastructure.Communication
     /// </summary>
     public static class SocketIOFactory
     {
+        private sealed class AuthenticationBinding
+        {
+            internal NameValueCollection Query;
+            internal SocketIoConnectorConfig Config;
+            internal void Refresh() => SocketHandshakeAuth.Refresh(Query, Config);
+        }
+        private static readonly ConditionalWeakTable<SocketIOClient.SocketIO, AuthenticationBinding>
+            AuthenticationBindings = new ConditionalWeakTable<SocketIOClient.SocketIO, AuthenticationBinding>();
+        public static void RefreshAuthentication(SocketIOClient.SocketIO client)
+        {
+            if (client != null && AuthenticationBindings.TryGetValue(client, out var binding))
+                binding.Refresh();
+        }
+
         public static SocketIOClient.SocketIO CreateClient(SocketIoConnectorConfig config, DebugSettings debugSettings)
         {
             if (config == null)
@@ -52,7 +67,7 @@ namespace Resto.Front.Api.HorecaControlPlugin.Core.Infrastructure.Communication
             };
 
             PluginContext.Log.Info(
-                $"SocketIOFactory :: Creating client, url={socketUrl}, path={Constants.SocketIoPath}, namespace=/plugin-websocket, transport=Polling, auth=disabled, timeout={Constants.ConnectionTimeout.TotalSeconds}s, reconnection=false");
+                $"SocketIOFactory :: Creating client, url={socketUrl}, path={Constants.SocketIoPath}, namespace=/plugin-websocket, transport=Polling, auth={(string.IsNullOrWhiteSpace(config.SocketAuthSecret) ? "legacy" : "hmac-sha256-v1")}, timeout={Constants.ConnectionTimeout.TotalSeconds}s, reconnection=false");
 
             var socketJsonSettings = new JsonSerializerSettings
             {
@@ -63,7 +78,7 @@ namespace Resto.Front.Api.HorecaControlPlugin.Core.Infrastructure.Communication
                 Converters = PluginHelpers.jsonSerializerSettings.Converters,
             };
 
-            return new SocketIOClient.SocketIO(new Uri(socketUrl), socketIoOptions, services =>
+            var client = new SocketIOClient.SocketIO(new Uri(socketUrl), socketIoOptions, services =>
             {
                 services.AddNewtonsoftJson(socketJsonSettings);
 
@@ -76,6 +91,17 @@ namespace Resto.Front.Api.HorecaControlPlugin.Core.Infrastructure.Communication
                     return new HttpClient(handler);
                 });
             });
+            if (!string.IsNullOrWhiteSpace(config.SocketAuthSecret))
+            {
+                var binding = new AuthenticationBinding
+                {
+                    Query = socketIoOptions.Query,
+                    Config = config
+                };
+                binding.Refresh();
+                AuthenticationBindings.Add(client, binding);
+            }
+            return client;
         }
     }
 }

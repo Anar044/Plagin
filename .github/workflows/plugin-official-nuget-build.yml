@@ -21,3 +21,27 @@ jobs:
       - name: Build plugin using NuGet.org (no publish / no cash register updates)
         shell: pwsh
         run: dotnet build API.HorecaControl.sln -p:APIVersion=V8P5 --configuration Release
+      - name: Verify QR test build outputs
+        shell: pwsh
+        run: |
+          $out = "Resto.Front.Api.HorecaControlPlugin/bin/Release"
+          $dll = Join-Path $out "net472/Resto.Front.Api.HorecaControlPlugin.dll"
+          $packages = @(Get-ChildItem -Path $out -Filter "Resto.Front.Api.HorecaControlPlugin.V8Preview5.*.nupkg" -File)
+          if (-not (Test-Path $dll)) { throw "QR test build DLL not found" }
+          if ($packages.Count -lt 1) { throw "QR test NuGet package not found" }
+          Write-Host "Test build present: $dll"
+          $packages | ForEach-Object { Write-Host "Test package: $($_.Name)" }
+      - name: Upload QR test package (download only; no deployment)
+        uses: actions/upload-artifact@v4
+        with:
+          name: SH-QR-POS-V8Preview5-TEST-nupkg
+          path: Resto.Front.Api.HorecaControlPlugin/bin/Release/*.nupkg
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload QR test DLL and adjacent dependencies (download only)
+        uses: actions/upload-artifact@v4
+        with:
+          name: SH-QR-POS-V8Preview5-TEST-bin-net472
+          path: Resto.Front.Api.HorecaControlPlugin/bin/Release/net472/**
+          if-no-files-found: error
+          retention-days: 14

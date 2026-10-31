@@ -1,0 +1,118 @@
+# Smart Horeca QR POS Bridge V1 — C# plugin
+
+**Status:** staged source code, draft PR only. No installed cash-register DLL is changed. Do not enable on production tills until reviewed, built against the actual host SDK, and tested with a real POS terminal.
+
+## Project files
+
+- `QrPosBridgeSettings.cs` — disabled by default.
+- `FileConfig.cs` — optional `QrPosBridge` node from the existing `smarthoreca.json`.
+- `QrPosBridgeService.cs` — HTTPS hello/pull/ackCreated/ackFailed/ackFiscalized (fiscal acknowledgement only with real fiscal register proof).
+- `HorecaControlChequeTaskProcessor.cs` — watches for successful fiscal-device callbacks, persists receipt data for background acknowledgement. No new receipt is created by this callback.
+- `HorecaControl.cs` — start/dispose hook isolated from legacy Socket.IO and push notifications.
+
+## Local configuration (example — no real secrets)
+
+Put into the `smarthoreca.json` selected by `FileConfig.GetConfig()`, alongside the existing `PluginId`. The fallback storage copy is used only if the primary config does not contain the plugin ID. Protect the file with NTFS permissions allowing only the POS service account and administrators.
+
+```json
+{
+  "PluginId": "your-registered-plugin-guid",
+  "QrPosBridge": {
+    "Enabled": false,
+    "AllowOrderCreation": false,
+    "AllowKitchenPrint": false,
+    "Url": "https://smarthoreca.pages.dev/api/qr-menu/pos-bridge",
+    "PluginIngressToken": "SET_BY_ADMIN_NOT_IN_GIT",
+    "BridgeToken": "SET_BY_ADMIN_NOT_IN_GIT",
+    "OperatorPin": "SET_ONLY_LOCALLY_ON_TEST_POS",
+    "PollSeconds": 10
+  }
+}
+```
+
+Create a dedicated iikoFront operator with only the permissions required to open QR orders. Its personal PIN is required for SubmitChanges and must remain only in the protected POS configuration; no default PIN is provided. Never store a PIN in GitHub, logs or screenshots.
+
+Do not share live tokens in chats, logs, screenshots, repositories or browser code. Rotate any inadvertently exposed token. `PluginIngressToken` must match the backend's `PLUGIN_INGEST_TOKEN`; `BridgeToken` must match `QR_POS_BRIDGE_TOKEN`, set only on Cloudflare/server secrets.
+
+## Синхронизация столов и залов в Smart Horeca
+
+В этой тестовой ветке QR POS Bridge умеет выгружать **все доступные активные и неактивные столы** текущей терминальной группы без записи чего-либо в iikoFront. Используются `PluginContext.Operations.GetRestaurantSections()` и `GetTables()`, данные `ITable.Id`, `ITable.Name`, `ITable.Number`, `ITable.IsActive`, `ITable.RestaurantSection.Id/Name`.
+
+Передача: действие `tablesSnapshot` в тот же защищённый HTTPS `/api/qr-menu/pos-bridge` после успешного `hello`, примерно раз в 2 минуты. Это работает в безопасном режиме `Enabled=true`, `AllowOrderCreation=false`, `AllowKitchenPrint=false`, без PIN. Не меняет настройки старого Socket.IO.
+
+Smart Horeca хранит снимок отдельно для пары `restaurant_id + plugin_id`. Пользователь с правом `qr.manage` выбирает кассу выбранного ресторана и импортирует столы по залам. Новым столам назначаются индивидуальные QR-токены; для ранее импортированных `posTableId` токен никогда не заменяется автоматически.
+
+Первый тест выполняйте только в изолированной тестовой D1. Если плагин не настроен на HTTPS QR Bridge или backend не имеет `PLUGIN_INGEST_TOKEN` и `QR_POS_BRIDGE_TOKEN`, список столов не поступит; в таком случае старый Socket.IO будет продолжать работу как прежде.
+
+## Один QR-ключ для тестовой синхронизации столов (30.10.2026)
+
+По решению владельца упростили **shared-test**: `PluginIngressToken` не нужен, искать старый глобальный `PLUGIN_INGEST_TOKEN` в Cloudflare и менять HMAC ключ **не требуется**. В защищённом локальном `smarthoreca.json` оставьте `PluginId` и `SocketAuthSecret`, добавьте только:
+
+```json
+"QrPosBridge": {
+  "Enabled": true,
+  "AllowOrderCreation": false,
+  "AllowKitchenPrint": false,
+  "Url": "https://feature-qr-order-internal-co.smarthoreca.pages.dev/api/qr-menu/pos-bridge",
+  "BridgeToken": "СОВПАДАЕТ_С_PREVIEW_QR_POS_BRIDGE_TOKEN",
+  "PollSeconds": 10
+}
+```
+
+На сервере QR Bridge сначала проверяет `QR_POS_BRIDGE_TOKEN`, затем точный allowlist `QR_TABLE_SYNC_PREVIEW_HOST/DEPARTMENT_ID/PLUGIN_ID` и регистрацию кассы в общем backend registry. В `shared-test` запрещены `pull`/все POS подтверждения/включение приёма гостевых заказов. Это только для отдельной тестовой кассы/preview; production-процедура привязки должна иметь индивидуальные полномочия каждого устройства. Полный режим создания заказа всё ещё требует `PluginIngressToken`.
+
+## Предварительная HTTPS-диагностика без создания заказов
+
+Для первого подключения к отдельному тестовому Cloudflare Pages **не включайте** создание POS-заказов или кухонную печать. В локальном `smarthoreca.json`:
+
+- `Enabled=true` (запустить только HTTPS hello);
+- `AllowOrderCreation=false`, `AllowKitchenPrint=false`;
+- `Url` — реальный HTTPS-адрес отдельного тестового Pages проекта, заканчивается на `/api/qr-menu/pos-bridge`;
+- `PluginIngressToken` и `BridgeToken` совпадают с тестовыми серверными секретами;
+- `OperatorPin` **не нужен** до включения создания заказов.
+
+Плагин должен написать `QrPosBridge :: HTTPS diagnostic handshake accepted; no POS writes or kitchen printing.`. Сервер сохранит `can_create_order=0`, `can_ack_fiscal=0`, `can_print_kitchen=0`, а попытка `pull` будет отвергнута. Диагностический hello **не делает кассу готовой к приёму заказов**.
+
+Для включения реальных заказов **только на тестовой кассе**, после подтверждённой диагностики и проверки локального кухонного принтера, потребуются одновременно `AllowOrderCreation=true`, `AllowKitchenPrint=true` и `OperatorPin` отдельного минимально-привилегированного iikoFront оператора. Заменять существующий Socket.IO адрес и ключ HMAC не требуется.
+
+## Fail-safe operation
+
+- With `Enabled=false` (the default), startup does nothing. With only `Enabled=true`, credentials and HTTPS URL, the plugin performs **diagnostic hello only** and cannot pull, create, close or print any POS order. Full POS processing requires `AllowOrderCreation=true`, `AllowKitchenPrint=true` and a dedicated operator PIN. The backend requires all three full capabilities before enabling guest checkout.
+- In production `Url` must be the **public** HTTPS Cloudflare Pages deployment host with exact endpoint path `/api/qr-menu/pos-bridge`.
+- Each request authenticates using BOTH secrets; backend validates `pluginId` and `departmentId` against the live plugin registry.
+- Hello advertises protocol v1. Pull returns 0 or 1 order, with a 90-second lease. For a retry, **never** create an order twice:
+  - Check iikoFront external data key `sh.qr.external_order_id` on existing orders.
+  - Maintain a durable local PREPARED/CREATED journal in plugin storage.
+  - PREPARED but no matching POS order is **POS_RESULT_UNKNOWN** requiring reconciliation, not automatic re-creation.
+- Validate AZN, one payment mode `PAY_AT_POS`, restaurant, product IDs, simple Dish only, no sizes/compound positions/modifiers, POS table ID for TABLE mode, active cash session and every menu price against POS current price.
+- Create an iikoFront order with the external id in **the same edit session** as its products, via `SubmitChanges`. **No online payment** and **no automatic closing**.
+- After iikoFront returns a real order ID, send `ackCreated`. If network fails, the local journal can recover the same order.
+- A successful cash-register fiscal operation can provide a genuine `DocumentNumber` and `DocumentSign`. The callback stores it as `FISCAL_PENDING` and the worker retries `ackFiscalized` until confirmed. Cash-only and card-only operations supported. Never infer fiscalization from simply closing the order.
+- If device does not return reliable document proof, or payment is mixed, mark for human reconciliation and **never invent a receipt number or RRN**.
+- Kitchen service printing uses `PrintOrderItems` for the new order only, after the real POS order is created and acknowledged. Before invoking the printer, the plugin durably marks `IN_PROGRESS`. After success it marks `PRINTED`; on exception or process interruption it marks `CHECK_REQUIRED` and **does not repeat the print automatically**. The cashier must inspect kitchen tickets and reconcile the ambiguous outcome. The backend receives `ackKitchen` and stores it separately from `POS_OPEN` and `CLOSED`.
+
+Дополнительная инструкция для отдельной тестовой D1: [QR_POS_STAGING_DIAGNOSTICS_RU.md](https://github.com/Anar044/anarsystem/blob/feature/qr-order-internal-core-20261029/docs/QR_POS_STAGING_DIAGNOSTICS_RU.md).
+
+## Important V8/V8P5 compatibility
+
+The source `Resto.Front.Api.HorecaControlPlugin.csproj` defaults to stable `Resto.Front.Api.V8` NuGet v8.7.6032. GitHub Windows build currently uses `-p:APIVersion=V8P5` (V8Preview5 8.4.6018-alpha). Existing terminals may run a different iikoFront 8.4.x and have other supported plugin API versions. **A successful CI build does not prove runtime API compatibility.** Use the exact API version and compatible licensing on the test till.
+
+GitHub Actions: `Plugin Official NuGet Build`; the workflow compiles only, it does not publish a new DLL to any cash register.
+
+## Test scenario
+
+1. Deploy the QR-order API from [anarsystem PR #214](https://github.com/Anar044/anarsystem/pull/214) to staging, configure D1, `QR_ORDER_RATE_SECRET`, `PLUGIN_INGEST_TOKEN`, `QR_POS_BRIDGE_TOKEN`.
+2. Register test plugin ID and exact restaurant department in the backend registry. Configure a real iikoFront table GUID and a published menu with a basic product ID and matching live price.
+3. On the **test** POS only, enable local bridge flags, restart plugin and verify `hello` is accepted. Confirm Smart Horeca admin reports the correct POS readiness.
+4. Place order from a table QR: verify D1 `AWAITING_POS → LEASED → POS_OPEN` and real iikoFront `Order.Id`, item count, price and section. Verify proper waiter assignment manually.
+5. Unplug network *after* POS creation but before ack. Restore; there must be only **one** POS order, retrieved by external ID.
+6. Attempt wrong restaurant/plugin ID, wrong product, stale price, no cash shift, unknown table ID — must reject without a POS order.
+7. Verify successful kitchen service printing, actual paper tickets and correct routing. Disconnect the printer or restart the plugin mid-print: confirm no automatic duplicate ticket; Smart Horeca must show `CHECK_REQUIRED`.
+8. Perform manual POS payment on the test cash register. Verify genuine fiscal device result, check `FISCAL_PENDING → FISCAL_ACKED`, D1 `CLOSED` only when receipt proof exists; test failed receipt and mixed payment do not falsely close the QR order.
+9. Check modifiers, shifts after midnight, offline tills, restaurant Chain isolation and refunds before any production release.
+
+## Known limitations
+
+- Modifier and combo mapping, multi-size products, direct waiter mapping, merge-with-existing-table-order and refunds still require separate development and tests. Basic kitchen printing and guest note transfer are now implemented, but have **not** been verified on a real printer. Unknown printer outcomes require human reconciliation.
+- Front V8 and V8P5 build is not a substitute for a matching installed DLL check and a test on the customer's Front runtime.
+- A successful fiscal callback does not provide a Payriff bank RRN. That is reserved for a later, separately verified online payment integration.
