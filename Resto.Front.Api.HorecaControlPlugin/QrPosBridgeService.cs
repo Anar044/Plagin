@@ -531,17 +531,20 @@ namespace Resto.Front.Api.HorecaControlPlugin
                 TotalMinor = totalMinor };
         }
 
-        // Never use a generic cash/card type to represent an online Payriff
-        // charge. A unique dedicated external Payriff type is mandatory.
+        // Existing iikoOffice "Payriff" is a Card payment type used by
+        // another integration. Keep it unchanged and never intercept it.
+        // The dedicated external processor is registered as "Payriff
+        // (Smart Horeca QR)"; its iikoOffice payment type must be "Payriff QR".
         private static IPaymentType ResolvePayriffType()
         {
             var types = PluginContext.Operations.GetPaymentTypes()
                 .Where(x => x.Kind == PaymentTypeKind.External &&
-                    string.Equals(x.Name, "Payriff", StringComparison.OrdinalIgnoreCase))
+                    string.Equals(x.Name, "Payriff QR", StringComparison.OrdinalIgnoreCase))
                 .ToArray();
             if (types.Length != 1)
                 throw new InvalidOperationException(
-                    "Configure ONE external payment type named Payriff in iikoOffice.");
+                    "Create ONE external payment type named Payriff QR for payment system " +
+                    "Payriff (Smart Horeca QR) in iikoOffice. Do not rename existing Card Payriff.");
             return types[0];
         }
 
