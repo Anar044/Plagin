@@ -291,7 +291,7 @@ namespace Resto.Front.Api.HorecaControlPlugin
                                 safeStatus + ". HTTPS hello remains active.");
                         }
                     }
-                    if (ready && settings.AllowOrderCreation)
+                    if (ready && settings.AllowOrderCreation && PaymentTypeReady())
                     {
                         await FlushCreatedAcknowledgementsAsync(ct).ConfigureAwait(false);
                         if (settings.AllowKitchenPrint)
