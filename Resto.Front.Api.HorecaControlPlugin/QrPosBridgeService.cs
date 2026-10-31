@@ -3,6 +3,7 @@ using Newtonsoft.Json.Linq;
 using Resto.Front.Api.Data.Assortment;
 using Resto.Front.Api.Data.Orders;
 using Resto.Front.Api.Data.Payments;
+using Resto.Front.Api.Exceptions;
 using Resto.Front.Api.Extensions;
 using Resto.Front.Api.Data.Organization.Sections;
 using System;
@@ -35,6 +36,8 @@ namespace Resto.Front.Api.HorecaControlPlugin
         private readonly object journalSync = new object();
         private readonly string journalDirectory;
         private Task runningTask;
+        private IDisposable paymentRegistration;
+        private QrPayriffPaymentProcessor paymentProcessor;
         private bool disposed;
 
         public QrPosBridgeService(QrPosBridgeSettings settings, SocketIoConnectorConfig identity)
@@ -42,7 +45,7 @@ namespace Resto.Front.Api.HorecaControlPlugin
             this.settings = settings ?? new QrPosBridgeSettings();
             this.identity = identity ?? throw new ArgumentNullException(nameof(identity));
             var handler = new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false };
-            http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(12) };
+            http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(40) };
             journalDirectory = Path.Combine(PluginHelpers.StorageDirectory, "QrPosBridge");
         }
 
@@ -59,6 +62,22 @@ namespace Resto.Front.Api.HorecaControlPlugin
                 return;
             }
             Directory.CreateDirectory(journalDirectory);
+            if (settings.AllowOrderCreation)
+            {
+                // Native iiko payment callbacks return the EXACT refund amount.
+                // Never run paid-order processing unless this registration works.
+                try
+                {
+                    paymentProcessor = new QrPayriffPaymentProcessor(this);
+                    paymentRegistration = PluginContext.Operations.RegisterPaymentSystem(paymentProcessor);
+                }
+                catch (Exception ex)
+                {
+                    PluginContext.Log.Warn("QrPosBridge :: Payriff payment system registration failed: " +
+                        ex.GetType().Name);
+                    return;
+                }
+            }
             runningTask = Task.Run(() => RunAsync(stop.Token));
             PluginContext.Log.Info(settings.AllowOrderCreation
                 ? "QrPosBridge :: opt-in processing started."
@@ -112,6 +131,57 @@ namespace Resto.Front.Api.HorecaControlPlugin
                 return false;
             }
             return true;
+        }
+
+        internal bool IsAlreadyPaidQrOrder(Guid orderId)
+        {
+            if (orderId == Guid.Empty || !settings.AllowOrderCreation) return false;
+            try
+            {
+                var ops = PluginContext.Operations;
+                var order = ops.GetOrderById(orderId);
+                if (order == null) return false;
+                var externalId = ops.TryGetOrderExternalDataByKey(order, ExternalOrderKey);
+                return Guid.TryParse(externalId, out var id) && id != Guid.Empty
+                    && File.Exists(JournalPath(id.ToString("D")));
+            }
+            catch { return false; }
+        }
+
+        internal void ReturnAlreadyPaidOrder(Guid orderId, Guid transactionId, decimal amount)
+        {
+            if (!settings.AllowOrderCreation || orderId == Guid.Empty ||
+                transactionId == Guid.Empty || amount <= 0m ||
+                decimal.Round(amount, 2) != amount)
+                throw new PaymentActionFailedException("Invalid Payriff refund amount or POS order.");
+            try
+            {
+                var pos = PluginContext.Operations.GetOrderById(orderId);
+                if (pos == null) throw new InvalidOperationException("POS order not found.");
+                var ext = PluginContext.Operations.TryGetOrderExternalDataByKey(pos, ExternalOrderKey);
+                if (!Guid.TryParse(ext, out var id) || id == Guid.Empty ||
+                    !File.Exists(JournalPath(id.ToString("D"))))
+                    throw new InvalidOperationException("Original Payriff order linkage unavailable.");
+                long minor = decimal.ToInt64(amount * 100m);
+                var response = SendAsync(Command("refundPayment", new {
+                    externalOrderId = id.ToString("D"),
+                    posOrderId = orderId.ToString("D"),
+                    transactionId = transactionId.ToString("D"),
+                    amountMinor = minor
+                }), CancellationToken.None).GetAwaiter().GetResult();
+                if (response.Value<bool?>("refundAccepted") != true)
+                    throw new InvalidOperationException("Refund not confirmed by Payriff.");
+                PluginContext.Log.Info("QrPosBridge :: Payriff refund accepted for original POS order.");
+            }
+            catch (Exception ex)
+            {
+                // iikoFront must NOT complete a local return after an
+                // unconfirmed Payriff refund. Never retry the bank POST blindly.
+                PluginContext.Log.Warn("QrPosBridge :: Payriff refund requires reconciliation: " +
+                    ex.GetType().Name);
+                throw new PaymentActionFailedException(
+                    "Payriff refund could not be verified. Check the Smart Horeca refund ledger before retrying.");
+            }
         }
 
         private async Task<JObject> SendAsync(object command, CancellationToken ct)
@@ -760,6 +830,7 @@ namespace Resto.Front.Api.HorecaControlPlugin
             disposed = true;
             stop.Cancel();
             // Non-blocking disposal: never delay shutting down the POS host.
+            paymentRegistration?.Dispose();
             http.Dispose();
             stop.Dispose();
         }
