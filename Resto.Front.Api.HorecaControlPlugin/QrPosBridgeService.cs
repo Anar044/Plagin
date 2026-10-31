@@ -77,9 +77,10 @@ namespace Resto.Front.Api.HorecaControlPlugin
             // registry. Never allow one-key order writes on arbitrary hosts.
             if (settings.AllowOrderCreation &&
                 string.IsNullOrWhiteSpace(settings.PluginIngressToken) &&
-                !string.Equals(new Uri(settings.Url).Host,
+                (!Uri.TryCreate(settings.Url, UriKind.Absolute, out var previewUrl) ||
+                 !string.Equals(previewUrl.Host,
                     "feature-qr-order-internal-co.smarthoreca.pages.dev",
-                    StringComparison.OrdinalIgnoreCase))
+                    StringComparison.OrdinalIgnoreCase)))
             {
                 reason = "One-key POS creation is restricted to QR Preview";
                 return false;
