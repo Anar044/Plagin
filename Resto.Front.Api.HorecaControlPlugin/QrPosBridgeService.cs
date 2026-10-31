@@ -834,7 +834,7 @@ namespace Resto.Front.Api.HorecaControlPlugin
                         if (live == null) throw new InvalidOperationException("POS order not found.");
                         // This uses the previously processed Payriff payment.
                         // Never call a bank payment processor for another debit.
-                        ops.PayOrder(ops.AuthenticateByPin(settings.OperatorPin), live);
+                        ops.PayOrder(ops.AuthenticateByPin(settings.OperatorPin), live, true, null);
                         var closed = ops.GetOrderById(posOrderId);
                         if (closed == null || closed.Status != OrderStatus.Closed)
                             throw new InvalidOperationException("iikoFront has not confirmed order closure.");
