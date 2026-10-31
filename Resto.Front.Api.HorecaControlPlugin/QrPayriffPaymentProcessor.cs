@@ -34,17 +34,17 @@ namespace Resto.Front.Api.HorecaControlPlugin
         public void CollectData(Guid orderId, Guid paymentTypeId, IUser cashier,
             IReceiptPrinter printer, IViewManager viewManager, IPaymentDataContext context)
         {
-            // Auto-created external tender has no card data to collect.
-            if (!bridge.IsAlreadyPaidQrOrder(orderId))
-                throw Denied();
+            // No card credentials or payment instructions are collected on POS.
+            // A staff-entered unpaid Payriff tender is rejected at Pay(), while
+            // automated AddExternalPaymentItem occurs before order commit.
         }
 
         public void OnPaymentAdded(IOrder order, IPaymentItem paymentItem,
             IUser cashier, IOperationService operations, IReceiptPrinter printer,
             IViewManager viewManager, IPaymentDataContext context)
         {
-            if (order != null && !bridge.IsAlreadyPaidQrOrder(order.Id))
-                throw Denied();
+            // A new QR order is not yet in iiko when this event fires.
+            // No money is moved here: final Pay() guards unpaid manual uses.
         }
 
         public bool OnPreliminaryPaymentEditing(IOrder order, IPaymentItem paymentItem,
